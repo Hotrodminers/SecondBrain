@@ -1,48 +1,51 @@
-"use client";
-
 import { Handle, Position } from "reactflow";
 
-const quadrantColors: Record<string, string> = {
-  do_now: "#ef4444", // red
-  schedule: "#14b8a6", // teal
-  delegate: "#f59e0b", // amber
-  drop: "#6b7280", // gray
-};
-
+// Define the shape of our data based on the agreed JSON schema
 interface TaskNodeData {
   label: string;
   note?: string;
-  quadrant: string;
+  quadrant: "do_now" | "schedule" | "delegate" | "drop";
 }
 
 export default function TaskNode({ data }: { data: TaskNodeData }) {
-  const borderColor = quadrantColors[data.quadrant] || "#6b7280";
+  // Determine border color based on quadrant value
+  const getBorderColor = () => {
+    switch (data.quadrant) {
+      case "do_now":
+        return "border-red-500";
+      case "schedule":
+        return "border-teal-500";
+      case "delegate":
+        return "border-amber-500";
+      case "drop":
+        return "border-gray-500";
+      default:
+        return "border-gray-700";
+    }
+  };
 
   return (
     <div
-      style={{
-        background: "#1e1e2e",
-        border: `2px solid ${borderColor}`,
-        borderRadius: "8px",
-        padding: "12px 16px",
-        minWidth: "160px",
-        maxWidth: "220px",
-        color: "#fff",
-        fontFamily: "Inter, sans-serif",
-      }}
+      className={`bg-[#242424] text-white p-4 rounded-lg border-2 shadow-lg min-w-[200px] ${getBorderColor()}`}
     >
-      <Handle type="target" position={Position.Top} />
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="w-2 h-2 !bg-gray-500"
+      />
 
-      <p style={{ margin: 0, fontSize: "14px", fontWeight: 500 }}>
-        {data.label}
-      </p>
-      {data.note && (
-        <p style={{ margin: "6px 0 0", fontSize: "11px", color: "#9ca3af" }}>
-          {data.note}
-        </p>
-      )}
+      <div className="flex flex-col gap-2">
+        <div className="font-bold text-sm">{data.label}</div>
+        {data.note && (
+          <div className="text-xs text-gray-400 italic">{data.note}</div>
+        )}
+      </div>
 
-      <Handle type="source" position={Position.Bottom} />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="w-2 h-2 !bg-gray-500"
+      />
     </div>
   );
 }
