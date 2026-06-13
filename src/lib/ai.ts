@@ -1,9 +1,4 @@
 // src/lib/ai.ts
-// AI Provider — Gemini primary, Claude backup
-// This is the brain of the entire product.
-
-// ─── System Prompts ─────────────────────────────────────────────
-
 const BRAINDUMP_PROMPT = `You are a productivity assistant that classifies tasks into an Eisenhower Matrix.
 
 INPUT: The user will paste unstructured text — a messy brain dump of tasks, goals, worries, deadlines, and random thoughts.
@@ -42,7 +37,6 @@ RULES:
 - Do NOT invent tasks the user didn't mention
 - Do NOT return anything except the JSON object`;
 
-
 const YOUTUBE_PROMPT = `You are a productivity assistant that extracts actionable steps from video transcripts.
 
 INPUT: A transcript from a YouTube video (educational, tutorial, or informational).
@@ -76,20 +70,16 @@ RULES:
 - If the transcript is empty or not useful, return {"title": "Unknown", "source_url": "", "steps": []}
 - Do NOT return anything except the JSON object`;
 
-
-// ─── Response Cleaning ──────────────────────────────────────────
-
 function cleanAIResponse(raw: string): string {
-  // Strip markdown code fences that AI sometimes adds despite instructions
   let cleaned = raw.trim();
-  cleaned = cleaned.replace(/^```json\s*/i, '');
-  cleaned = cleaned.replace(/^```\s*/i, '');
-  cleaned = cleaned.replace(/\s*```$/i, '');
+  cleaned = cleaned.replace(/^```json\s*/i, "");
+  cleaned = cleaned.replace(/^```\s*/i, "");
+  cleaned = cleaned.replace(/\s*```$/i, "");
   cleaned = cleaned.trim();
   return cleaned;
 }
 
-const VALID_QUADRANTS = ['do_now', 'schedule', 'delegate', 'drop'];
+const VALID_QUADRANTS = ["do_now", "schedule", "delegate", "drop"];
 
 interface BrainDumpNode {
   id: string;
@@ -117,84 +107,87 @@ interface YouTubeResponse {
 }
 
 function validateBrainDumpResponse(data: any): BrainDumpResponse {
-  // If response doesn't have nodes array, return empty
   if (!data || !data.nodes || !Array.isArray(data.nodes)) {
     return { nodes: [] };
   }
 
   const validated: BrainDumpNode[] = data.nodes
     .filter((n: any) => {
-      // Must have label and valid quadrant
       return (
         n &&
-        typeof n.label === 'string' &&
+        typeof n.label === "string" &&
         n.label.trim().length > 0 &&
-        typeof n.quadrant === 'string' &&
+        typeof n.quadrant === "string" &&
         VALID_QUADRANTS.includes(n.quadrant)
       );
     })
-    .slice(0, 10) // Hard cap at 10
+    .slice(0, 10)
     .map((n: any, index: number) => ({
-      id: typeof n.id === 'string' ? n.id : `bd_${index + 1}`,
+      id: typeof n.id === "string" ? n.id : `bd_${index + 1}`,
       label: String(n.label).trim().slice(0, 60),
       quadrant: n.quadrant,
-      note: n.note && typeof n.note === 'string' ? n.note.slice(0, 120) : null,
-      category: n.category && typeof n.category === 'string' ? n.category.slice(0, 30) : null,
+      note: n.note && typeof n.note === "string" ? n.note.slice(0, 120) : null,
+      category:
+        n.category && typeof n.category === "string"
+          ? n.category.slice(0, 30)
+          : null,
     }));
 
   return { nodes: validated };
 }
 
-function validateYouTubeResponse(data: any, originalUrl: string): YouTubeResponse {
+function validateYouTubeResponse(
+  data: any,
+  originalUrl: string,
+): YouTubeResponse {
   if (!data || !data.steps || !Array.isArray(data.steps)) {
-    return { title: 'Unknown', source_url: originalUrl, steps: [] };
+    return { title: "Unknown", source_url: originalUrl, steps: [] };
   }
 
   const validated: YouTubeStep[] = data.steps
     .filter((s: any) => {
-      return s && typeof s.label === 'string' && s.label.trim().length > 0;
+      return s && typeof s.label === "string" && s.label.trim().length > 0;
     })
-    .slice(0, 12) // Hard cap at 12
+    .slice(0, 12)
     .map((s: any, index: number) => ({
-      id: typeof s.id === 'string' ? s.id : `yt_${index + 1}`,
+      id: typeof s.id === "string" ? s.id : `yt_${index + 1}`,
       label: String(s.label).trim().slice(0, 80),
-      order: typeof s.order === 'number' ? s.order : index + 1,
-      detail: s.detail && typeof s.detail === 'string' ? s.detail.slice(0, 150) : null,
+      order: typeof s.order === "number" ? s.order : index + 1,
+      detail:
+        s.detail && typeof s.detail === "string"
+          ? s.detail.slice(0, 150)
+          : null,
     }));
 
   return {
-    title: typeof data.title === 'string' ? data.title.slice(0, 100) : 'Unknown',
+    title:
+      typeof data.title === "string" ? data.title.slice(0, 100) : "Unknown",
     source_url: originalUrl,
     steps: validated,
   };
 }
 
-
 // ─── Gemini API (Primary) ───────────────────────────────────────
-
 const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-async function callGemini(systemPrompt: string, userText: string): Promise<string> {
+async function callGemini(
+  systemPrompt: string,
+  userText: string,
+): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+  if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 
-  // Gemini doesn't have a separate system prompt field,
-  // so we concatenate system prompt + user input into one message
   const combinedPrompt = `${systemPrompt}\n\n---\n\nUser input:\n${userText}`;
 
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: combinedPrompt }],
-        },
-      ],
+      contents: [{ parts: [{ text: combinedPrompt }] }],
       generationConfig: {
-        temperature: 0.3, // Low temperature for consistent structured output
-        maxOutputTokens: 1024,
+        temperature: 0.3,
+        maxOutputTokens: 2048,
       },
     }),
   });
@@ -205,37 +198,31 @@ async function callGemini(systemPrompt: string, userText: string): Promise<strin
   }
 
   const data = await response.json();
-
-  // Extract text from Gemini response
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error('Empty response from Gemini');
-  }
-
+  if (!text) throw new Error("Empty response from Gemini");
   return text;
 }
 
-
-// ─── Claude API (Backup) ────────────────────────────────────────
-
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
-
-async function callClaude(systemPrompt: string, userText: string): Promise<string> {
+// ─── Claude API (Backup — disabled, no key) ────────────────────
+async function callClaude(
+  systemPrompt: string,
+  userText: string,
+): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
-  const response = await fetch(CLAUDE_API_URL, {
-    method: 'POST',
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userText }],
+      messages: [{ role: "user", content: userText }],
     }),
   });
 
@@ -245,107 +232,73 @@ async function callClaude(systemPrompt: string, userText: string): Promise<strin
   }
 
   const data = await response.json();
-
   const text = data?.content?.[0]?.text;
-  if (!text) {
-    throw new Error('Empty response from Claude');
-  }
-
+  if (!text) throw new Error("Empty response from Claude");
   return text;
 }
 
-
 // ─── Main Exported Functions ────────────────────────────────────
-
-/**
- * Takes messy brain dump text, returns classified Eisenhower Matrix nodes.
- * Tries Gemini first, falls back to Claude if Gemini fails.
- */
-export async function classifyBrainDump(text: string): Promise<BrainDumpResponse> {
+export async function classifyBrainDump(
+  text: string,
+): Promise<BrainDumpResponse> {
   let raw: string;
 
   try {
-    console.log('[AI] Attempting Gemini for brain dump...');
+    console.log("[AI] Attempting Gemini 1.5 Flash...");
     raw = await callGemini(BRAINDUMP_PROMPT, text);
-    console.log('[AI] Gemini responded successfully');
+    console.log("[AI] Gemini responded successfully");
   } catch (geminiError) {
-    console.error('[AI] Gemini failed:', geminiError);
-
+    console.error("[AI] Gemini failed:", geminiError);
     try {
-      console.log('[AI] Falling back to Claude...');
+      console.log("[AI] Falling back to Claude...");
       raw = await callClaude(BRAINDUMP_PROMPT, text);
-      console.log('[AI] Claude responded successfully');
+      console.log("[AI] Claude responded successfully");
     } catch (claudeError) {
-      console.error('[AI] Claude also failed:', claudeError);
-      throw new Error('Both AI providers failed');
+      console.error("[AI] Claude also failed:", claudeError);
+      throw new Error("Both AI providers failed");
     }
   }
 
-  // Clean and parse
-  const cleaned = cleanAIResponse(raw);
-
+  const cleaned = cleanAIResponse(raw!);
   let parsed: any;
+
   try {
     parsed = JSON.parse(cleaned);
-  } catch (parseError) {
-    console.error('[AI] JSON parse failed. Raw response:', raw);
-    console.error('[AI] Cleaned response:', cleaned);
-
-    // One retry with the other provider
-    try {
-      console.log('[AI] Retrying with other provider due to parse failure...');
-      const retryRaw = raw === cleaned
-        ? await callClaude(BRAINDUMP_PROMPT, text)
-        : await callGemini(BRAINDUMP_PROMPT, text);
-      const retryCleaned = cleanAIResponse(retryRaw);
-      parsed = JSON.parse(retryCleaned);
-    } catch {
-      throw new Error('Failed to parse AI response as JSON after retry');
-    }
+  } catch {
+    console.error("[AI] JSON parse failed. Raw:", raw!);
+    throw new Error("Failed to parse AI response as JSON");
   }
 
   return validateBrainDumpResponse(parsed);
 }
 
-
-/**
- * Takes a YouTube transcript, returns ordered action steps.
- * Tries Gemini first, falls back to Claude if Gemini fails.
- */
 export async function extractYouTubeSteps(
   transcript: string,
-  sourceUrl: string
+  sourceUrl: string,
 ): Promise<YouTubeResponse> {
-  // Add the source URL to the prompt context
   const userInput = `Source URL: ${sourceUrl}\n\nTranscript:\n${transcript}`;
-
   let raw: string;
 
   try {
-    console.log('[AI] Attempting Gemini for YouTube extraction...');
+    console.log("[AI] Attempting Gemini for YouTube...");
     raw = await callGemini(YOUTUBE_PROMPT, userInput);
-    console.log('[AI] Gemini responded successfully');
+    console.log("[AI] Gemini responded successfully");
   } catch (geminiError) {
-    console.error('[AI] Gemini failed:', geminiError);
-
+    console.error("[AI] Gemini failed:", geminiError);
     try {
-      console.log('[AI] Falling back to Claude...');
       raw = await callClaude(YOUTUBE_PROMPT, userInput);
-      console.log('[AI] Claude responded successfully');
-    } catch (claudeError) {
-      console.error('[AI] Claude also failed:', claudeError);
-      throw new Error('Both AI providers failed');
+    } catch {
+      throw new Error("Both AI providers failed");
     }
   }
 
-  const cleaned = cleanAIResponse(raw);
-
+  const cleaned = cleanAIResponse(raw!);
   let parsed: any;
+
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    console.error('[AI] JSON parse failed for YouTube. Raw:', raw);
-    throw new Error('Failed to parse YouTube AI response');
+    throw new Error("Failed to parse YouTube AI response");
   }
 
   return validateYouTubeResponse(parsed, sourceUrl);
