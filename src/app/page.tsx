@@ -2,37 +2,37 @@ const metrics = [
   {
     label: "Brain-dumps",
     value: "0",
-    detail: "Structured notes converted into actionable nodes"
+    detail: "Structured notes converted into actionable nodes",
   },
   {
     label: "Deadline conflicts",
     value: "0",
-    detail: "Overlaps highlighted before they become problems"
+    detail: "Overlaps highlighted before they become problems",
   },
   {
     label: "Video transcripts",
     value: "0",
-    detail: "Roadmap steps extracted from YouTube content"
-  }
+    detail: "Roadmap steps extracted from YouTube content",
+  },
 ];
 
 const lanes = [
   {
     title: "Important + urgent",
-    items: ["Submit hackathon demo", "Fix auth blocker"]
+    items: ["Submit hackathon demo", "Fix auth blocker"],
   },
   {
     title: "Important + not urgent",
-    items: ["Prepare portfolio", "Ship daily review habit"]
+    items: ["Prepare portfolio", "Ship daily review habit"],
   },
   {
     title: "Urgent + not important",
-    items: ["Reply to routine pings", "Rename docs"]
+    items: ["Reply to routine pings", "Rename docs"],
   },
   {
     title: "Neither",
-    items: ["Scroll loop", "Random tab hoarding"]
-  }
+    items: ["Scroll loop", "Random tab hoarding"],
+  },
 ];
 
 export default function Home() {
@@ -44,11 +44,11 @@ export default function Home() {
           <h1>Turn chaos into a working life map.</h1>
           <p className="lede">
             An infinite canvas for goals, deadlines, and ideas. This baseline is
-            ready for the React Flow workspace, brain-dump parser, and transcript
-            extractor that will power the MVP.
+            ready for the React Flow workspace, brain-dump parser, and
+            transcript extractor that will power the MVP.
           </p>
           <div className="hero-actions">
-            <a className="primary-button" href="#canvas">
+            <a className="primary-button" href="canvas">
               Open Canvas
             </a>
             <a className="secondary-button" href="#roadmap">
@@ -95,15 +95,24 @@ export default function Home() {
         <div className="roadmap-grid">
           <article>
             <h3>Production-ready baseline</h3>
-            <p>Next.js App Router, TypeScript, strict linting, and deployment-friendly output.</p>
+            <p>
+              Next.js App Router, TypeScript, strict linting, and
+              deployment-friendly output.
+            </p>
           </article>
           <article>
             <h3>Visual system</h3>
-            <p>Custom typography, layered gradients, and a bento-style layout for the canvas feel.</p>
+            <p>
+              Custom typography, layered gradients, and a bento-style layout for
+              the canvas feel.
+            </p>
           </article>
           <article>
             <h3>Track-specific runway</h3>
-            <p>Clear starting point for React Flow nodes, smart parsing, and transcript extraction.</p>
+            <p>
+              Clear starting point for React Flow nodes, smart parsing, and
+              transcript extraction.
+            </p>
           </article>
         </div>
       </section>

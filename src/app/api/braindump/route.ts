@@ -7,35 +7,16 @@ export async function POST(req: NextRequest) {
     const { text } = body;
 
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
-      return NextResponse.json({ nodes: [] });
+      return NextResponse.json({ nodes: [] }, { status: 200 });
     }
 
-    const trimmedText = text.trim();
-    if (trimmedText.length > 2000) {
-      return NextResponse.json(
-        { error: 'Input too long. Keep under 2000 characters.' },
-        { status: 400 }
-      );
-    }
+    const result = await classifyBrainDump(text.trim());
+    return NextResponse.json(result, { status: 200 });
 
-    console.log(`[BrainDump] Processing ${trimmedText.length} chars...`);
-    const result = await classifyBrainDump(trimmedText);
-    console.log(`[BrainDump] Returned ${result.nodes.length} nodes`);
-
-    return NextResponse.json(result);
   } catch (error) {
-    console.error('[BrainDump] Error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-
-    if (message.includes('Both AI providers failed')) {
-      return NextResponse.json(
-        { error: 'AI service temporarily unavailable.' },
-        { status: 503 }
-      );
-    }
-
+    console.error('[braindump route] Error:', error);
     return NextResponse.json(
-      { error: 'Failed to process brain dump.' },
+      { error: 'Internal server error', nodes: [] },
       { status: 500 }
     );
   }
