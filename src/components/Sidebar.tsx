@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useSession, signOut } from "next-auth/react";
 import { createYouTubeEdges } from "@/lib/quadrants";
 
 interface SidebarProps {
@@ -16,6 +18,7 @@ export default function Sidebar({
   onClear,
   onLoadingChange,
 }: SidebarProps) {
+  const { data: session } = useSession();
   const [activeTab, setActiveTab] = useState<"dump" | "youtube">("dump");
   const [text, setText] = useState("");
   const [ytUrl, setYtUrl] = useState("");
@@ -72,8 +75,9 @@ export default function Sidebar({
       const data = await response.json();
 
       if (data.steps && data.steps.length > 0) {
+        const batchId = Date.now();
         const mappedNodes = data.steps.map((step: any, index: number) => ({
-          id: step.id || `yt_${Date.now()}_${index}`,
+          id: `yt_${batchId}_${index}`,
           label: step.label,
           note: data.title || "YouTube Roadmap",
           quadrant: "schedule",
@@ -451,6 +455,83 @@ export default function Sidebar({
       >
         Clear Canvas
       </button>
+
+      {/* Account */}
+      <div
+        style={{
+          borderTop: "1px solid #1f1f1f",
+          paddingTop: "12px",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+        }}
+      >
+        <Link
+          href="/account"
+          title="View account"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            flex: 1,
+            minWidth: 0,
+            textDecoration: "none",
+          }}
+        >
+          <div
+            style={{
+              width: "28px",
+              height: "28px",
+              borderRadius: "50%",
+              background: "#2d5a3f",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "12px",
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            {(session?.user?.name || session?.user?.email || "?")
+              .charAt(0)
+              .toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p
+              style={{
+                color: "#aaa",
+                fontSize: "12px",
+                margin: 0,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {session?.user?.name || session?.user?.email || "Guest"}
+            </p>
+            <p style={{ color: "#555", fontSize: "10px", margin: 0 }}>
+              View account →
+            </p>
+          </div>
+        </Link>
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          style={{
+            background: "transparent",
+            color: "#888",
+            border: "1px solid #2a2a2a",
+            borderRadius: "8px",
+            padding: "6px 10px",
+            fontSize: "11px",
+            cursor: "pointer",
+            fontFamily: "Inter, sans-serif",
+            flexShrink: 0,
+          }}
+        >
+          Sign out
+        </button>
+      </div>
     </div>
   );
 }

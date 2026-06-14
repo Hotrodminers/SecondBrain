@@ -31,9 +31,14 @@ export async function POST(req: NextRequest) {
     try {
       const segments = await YoutubeTranscript.fetchTranscript(videoId);
       transcript = segments.map((s: any) => s.text).join(" ");
-    } catch {
+    } catch (txErr: any) {
+      console.log("[YouTube] Transcript FAILED:", txErr?.message);
       return NextResponse.json(
-        { error: "Could not fetch transcript. Video may not have captions." },
+        {
+          error:
+            txErr?.message?.replace("[YoutubeTranscript] 🚨 ", "") ||
+            "Could not fetch transcript. Video may not have captions.",
+        },
         { status: 400 },
       );
     }
@@ -52,10 +57,10 @@ export async function POST(req: NextRequest) {
     console.log(`[YouTube] Returned ${result.steps.length} steps`);
 
     return NextResponse.json(result);
-  } catch (error) {
-    console.error("[YouTube] Error:", error);
+  } catch (error: any) {
+    console.log("[YouTube] Error:", error?.message);
     return NextResponse.json(
-      { error: "Failed to process video" },
+      { error: `Failed to process video: ${error?.message || "unknown"}` },
       { status: 500 },
     );
   }
