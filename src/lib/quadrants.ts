@@ -52,6 +52,7 @@ export function createYouTubeEdges(steps: { id: string; order: number }[]) {
       source: sorted[i].id,
       target: sorted[i + 1].id,
       animated: true,
+      style: { stroke: "#14b8a6", strokeWidth: 2 },
     });
   }
 

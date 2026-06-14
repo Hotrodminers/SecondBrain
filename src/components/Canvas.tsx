@@ -11,16 +11,11 @@ import "reactflow/dist/style.css";
 import TaskNode from "./TaskNode";
 import SkeletonNode from "./SkeletonNode";
 import Sidebar from "./Sidebar";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { getNodePosition } from "@/lib/quadrants";
+import { saveCanvasState, loadCanvasState, clearCanvasState } from "@/lib/storage";
 
 const nodeTypes = { taskNode: TaskNode, skeletonNode: SkeletonNode };
-
-const quadrantPositions: Record<string, { x: number; y: number }> = {
-  do_now: { x: 200, y: 150 },
-  schedule: { x: 900, y: 150 },
-  delegate: { x: 200, y: 600 },
-  drop: { x: 900, y: 600 },
-};
 
 const skeletonNodes = [
   {
@@ -49,7 +44,6 @@ const skeletonNodes = [
   },
 ];
 
-// Pre-seeded demo state for high-impact first load
 const initialDemoNodes = [
   {
     id: "demo-1",
@@ -101,8 +95,6 @@ const initialDemoNodes = [
       quadrant: "drop",
     },
   },
-
-  // YouTube Roadmap Chain (Schedule Quadrant)
   {
     id: "yt-1",
     type: "taskNode",
@@ -158,44 +150,24 @@ export default function Canvas() {
   const [showSkeleton, setShowSkeleton] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from localStorage or inject demo data on mount
   useEffect(() => {
-    try {
-      const savedNodes = localStorage.getItem("second-brain-nodes");
-      const savedEdges = localStorage.getItem("second-brain-edges");
-
-      const parsedNodes = savedNodes ? JSON.parse(savedNodes) : [];
-      const parsedEdges = savedEdges ? JSON.parse(savedEdges) : [];
-
-      if (parsedNodes.length > 0) {
-        setNodes(parsedNodes);
-        setEdges(parsedEdges);
-      } else {
-        // Pre-seed demo state if empty
-        setNodes(initialDemoNodes);
-        setEdges(initialDemoEdges);
-      }
-    } catch (e) {
-      console.error("Failed to load saved data", e);
+    const saved = loadCanvasState();
+    if (saved && saved.nodes.length > 0) {
+      setNodes(saved.nodes);
+      setEdges(saved.edges);
+    } else {
       setNodes(initialDemoNodes);
       setEdges(initialDemoEdges);
-    } finally {
-      setIsLoaded(true);
     }
+    setIsLoaded(true);
   }, [setNodes, setEdges]);
 
-  // Save to localStorage on changes
   useEffect(() => {
     if (!isLoaded) return;
-    try {
-      localStorage.setItem("second-brain-nodes", JSON.stringify(nodes));
-      localStorage.setItem("second-brain-edges", JSON.stringify(edges));
-    } catch (e) {
-      console.error("Failed to save data", e);
-    }
+    const realNodes = nodes.filter((n) => n.type !== "skeletonNode");
+    saveCanvasState(realNodes, edges);
   }, [nodes, edges, isLoaded]);
 
-  // Force React Flow state to accept or remove skeletons dynamically
   useEffect(() => {
     if (showSkeleton) {
       setNodes((prev) => [...prev, ...skeletonNodes]);
@@ -204,55 +176,42 @@ export default function Canvas() {
     }
   }, [showSkeleton, setNodes]);
 
-  const handleNodesReceived = (newNodes: any[]) => {
+  const handleNodesReceived = useCallback((newNodes: any[]) => {
     setNodes((prev) => {
-      // Clean out skeletons immediately if they somehow lingered
       const cleanedPrev = prev.filter((n) => n.type !== "skeletonNode");
 
-      const quadrantCount: Record<string, number> = {
-        do_now: 0,
-        schedule: 0,
-        delegate: 0,
-        drop: 0,
-      };
+      const quadrantCount: Record<string, number> = {};
       cleanedPrev.forEach((n) => {
-        if (n.data?.quadrant)
-          quadrantCount[n.data.quadrant] =
-            (quadrantCount[n.data.quadrant] || 0) + 1;
+        if (n.data?.quadrant) {
+          quadrantCount[n.data.quadrant] = (quadrantCount[n.data.quadrant] || 0) + 1;
+        }
       });
 
       const positioned = newNodes.map((node) => {
-        const base = quadrantPositions[node.quadrant] || { x: 400, y: 300 };
         const count = quadrantCount[node.quadrant] || 0;
         quadrantCount[node.quadrant] = count + 1;
 
         return {
-          id:
-            node.id ||
-            `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          id: node.id || `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           type: "taskNode",
-          position: {
-            x: base.x + (count % 2) * 280,
-            y: base.y + Math.floor(count / 2) * 160,
-          },
+          position: getNodePosition(node.quadrant, count),
           data: { label: node.label, note: node.note, quadrant: node.quadrant },
         };
       });
 
       return [...cleanedPrev, ...positioned];
     });
-  };
+  }, [setNodes]);
 
-  const handleEdgesReceived = (newEdges: any[]) => {
+  const handleEdgesReceived = useCallback((newEdges: any[]) => {
     setEdges((prev) => [...prev, ...newEdges]);
-  };
+  }, [setEdges]);
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     setNodes([]);
     setEdges([]);
-    localStorage.removeItem("second-brain-nodes");
-    localStorage.removeItem("second-brain-edges");
-  };
+    clearCanvasState();
+  }, [setNodes, setEdges]);
 
   return (
     <div
@@ -263,7 +222,6 @@ export default function Canvas() {
         background: "#0a0a0a",
       }}
     >
-      {/* SIDEBAR UPDATED WITH onEdgesReceived PROP */}
       <Sidebar
         onNodesReceived={handleNodesReceived}
         onEdgesReceived={handleEdgesReceived}
@@ -279,7 +237,6 @@ export default function Canvas() {
           position: "relative",
         }}
       >
-        {/* Top bar */}
         <div
           style={{
             position: "absolute",
@@ -396,9 +353,9 @@ export default function Canvas() {
             }}
           />
           <MiniMap
-            width={160}
-            height={100}
             style={{
+              width: 160,
+              height: 100,
               background: "#0f0f0f",
               border: "1px solid #2a2a2a",
               borderRadius: "12px",
