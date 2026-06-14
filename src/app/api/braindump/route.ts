@@ -1,27 +1,23 @@
-{
-  "compilerOptions": {
-    "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./src/*"]
+import { NextRequest, NextResponse } from 'next/server';
+import { classifyBrainDump } from '@/lib/ai';
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { text } = body;
+
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      return NextResponse.json({ nodes: [] }, { status: 200 });
     }
-  },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+
+    const result = await classifyBrainDump(text.trim());
+    return NextResponse.json(result, { status: 200 });
+
+  } catch (error) {
+    console.error('[braindump route] Error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error', nodes: [] },
+      { status: 500 }
+    );
+  }
 }
