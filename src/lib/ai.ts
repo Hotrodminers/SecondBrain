@@ -71,6 +71,30 @@ RULES:
 - If transcript is empty or not useful, return {"title": "Unknown", "source_url": "", "steps": []}
 - Do NOT return anything except the JSON object`;
 
+const RELATIONSHIP_PROMPT = `You analyze a list of tasks and identify relationships between them.
+
+INPUT: A JSON list of tasks, each with an "id" and "label" (and sometimes a note).
+
+YOUR JOB: Find meaningful relationships between PAIRS of tasks:
+- "depends_on": the source task should be done AFTER the target — the target is a prerequisite for the source. Example: "Submit application" depends_on "Get approval".
+- "related_to": the two tasks belong to the same topic / project / theme, but neither must strictly come before the other.
+
+OUTPUT FORMAT: Respond with ONLY a valid JSON object. No markdown backticks. No explanation. Just the raw JSON.
+
+{
+  "edges": [
+    { "source": "bd_2", "target": "bd_1", "type": "depends_on" },
+    { "source": "bd_3", "target": "bd_4", "type": "related_to" }
+  ]
+}
+
+RULES:
+- Only use task IDs that appear in the input. Never invent IDs.
+- source and target MUST be different IDs.
+- Only add a relationship when it is clearly implied — it is perfectly fine to return few or no edges: {"edges": []}.
+- Each pair of tasks should appear at most once.
+- Do NOT return anything except the JSON object.`;
+
 // ─── Response Cleaning ──────────────────────────────────────────
 
 function cleanAIResponse(raw: string): string {
@@ -130,6 +154,36 @@ function validateYouTubeResponse(data: any, originalUrl: string) {
     source_url: originalUrl,
     steps: validated,
   };
+}
+
+const VALID_EDGE_TYPES = ['depends_on', 'related_to'];
+
+function validateRelationships(data: any, nodes: { id: string }[]) {
+  if (!data || !Array.isArray(data.edges)) return { edges: [] };
+
+  const ids = new Set(nodes.map((n) => n.id));
+  const seen = new Set<string>();
+  const edges: { source: string; target: string; type: string }[] = [];
+
+  for (const e of data.edges) {
+    if (!e || typeof e.source !== 'string' || typeof e.target !== 'string') continue;
+    if (e.source === e.target) continue;
+    // Drop hallucinated edges that reference non-existent nodes.
+    if (!ids.has(e.source) || !ids.has(e.target)) continue;
+
+    const type = VALID_EDGE_TYPES.includes(e.type) ? e.type : 'related_to';
+    // Dedupe: depends_on is directional, related_to is symmetric.
+    const key =
+      type === 'depends_on'
+        ? `d:${e.source}->${e.target}`
+        : `r:${[e.source, e.target].sort().join('|')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    edges.push({ source: e.source, target: e.target, type });
+  }
+
+  return { edges: edges.slice(0, 30) };
 }
 
 // ─── Groq API (Primary) ────────────────────────────────────────
@@ -287,6 +341,54 @@ export async function classifyBrainDump(text: string) {
   }
 
   return validateBrainDumpResponse(parsed);
+}
+
+// Dedicated to Gemini per design. Relationships are a secondary enrichment,
+// so any failure returns no edges rather than breaking the brain dump.
+export async function extractRelationships(
+  nodes: { id: string; label: string; note?: string | null }[],
+) {
+  if (!nodes || nodes.length < 2) return { edges: [] };
+
+  const taskList = nodes.map((n) => ({
+    id: n.id,
+    label: n.label,
+    ...(n.note ? { note: n.note } : {}),
+  }));
+  const userInput = `Tasks:\n${JSON.stringify(taskList, null, 2)}`;
+
+  // Prefer Gemini (keeps Groq free for YT/brain-dump), but fall back to
+  // Groq then Claude so a Gemini outage/quota issue never blocks relationships.
+  let raw: string | null = null;
+  const providers: [string, (s: string, u: string) => Promise<string>][] = [
+    ['Gemini', callGemini],
+    ['Groq', callGroq],
+    ['Claude', callClaude],
+  ];
+  for (const [name, fn] of providers) {
+    try {
+      console.log(`[AI] Extracting relationships via ${name}...`);
+      raw = await fn(RELATIONSHIP_PROMPT, userInput);
+      console.log(`[AI] Relationships from ${name}`);
+      break;
+    } catch (err) {
+      console.error(`[AI] Relationship via ${name} failed:`, err);
+    }
+  }
+  if (raw === null) {
+    console.error('[AI] All providers failed for relationships');
+    return { edges: [] };
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(cleanAIResponse(raw));
+  } catch {
+    console.error('[AI] Relationship JSON parse failed. Raw:', raw);
+    return { edges: [] };
+  }
+
+  return validateRelationships(parsed, nodes);
 }
 
 export async function extractYouTubeSteps(transcript: string, sourceUrl: string) {

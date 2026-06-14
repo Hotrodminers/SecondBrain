@@ -6,7 +6,7 @@ import { useSession, signOut } from "next-auth/react";
 import { createYouTubeEdges } from "@/lib/quadrants";
 
 interface SidebarProps {
-  onNodesReceived: (nodes: any[]) => void;
+  onNodesReceived: (nodes: any[], options?: { linkAll?: boolean }) => void;
   onEdgesReceived?: (edges: any[]) => void;
   onClear: () => void;
   onLoadingChange: (loading: boolean) => void;
@@ -47,7 +47,9 @@ export default function Sidebar({
       const data = await response.json();
 
       if (data.nodes && data.nodes.length > 0) {
-        onNodesReceived(data.nodes);
+        // linkAll: re-run relationship extraction across the whole board so
+        // these new tasks connect to anything already on the canvas.
+        onNodesReceived(data.nodes, { linkAll: true });
         setText("");
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
@@ -484,22 +486,40 @@ export default function Sidebar({
           Quadrants
         </p>
         {[
-          { color: "#ef4444", label: "Do Now", desc: "Urgent + Important" },
+          {
+            color: "#ef4444",
+            label: "Do Now",
+            desc: "Urgent + Important",
+            tip: "Important AND time-critical. There are consequences if it slips — do it today (e.g. exam tomorrow).",
+          },
           {
             color: "#14b8a6",
             label: "Schedule",
             desc: "Important, not urgent",
+            tip: "Matters for your goals but has no deadline pressure yet. Plan a time so it doesn't get ignored (e.g. build your portfolio).",
           },
           {
             color: "#f59e0b",
             label: "Delegate",
             desc: "Urgent, not important",
+            tip: "Time-sensitive but low-value to you. Hand it off or knock it out fast — don't let it eat your important work (e.g. routine email).",
           },
-          { color: "#6b7280", label: "Drop", desc: "Neither" },
+          {
+            color: "#6b7280",
+            label: "Drop",
+            desc: "Neither",
+            tip: "Neither urgent nor important. Distractions and time-wasters — let them go (e.g. doomscrolling).",
+          },
         ].map((q) => (
           <div
             key={q.label}
-            style={{ display: "flex", alignItems: "center", gap: "8px" }}
+            title={q.tip}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              cursor: "help",
+            }}
           >
             <div
               style={{

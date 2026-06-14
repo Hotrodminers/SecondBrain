@@ -3,6 +3,7 @@
 import { Handle, Position } from "reactflow";
 import { useState, useCallback } from "react";
 import { useReactFlow } from "reactflow";
+import { useCluster } from "./ClusterContext";
 
 const quadrantColors: Record<string, string> = {
   do_now: "#ef4444",
@@ -21,6 +22,10 @@ const quadrantLabels: Record<string, string> = {
 export default function TaskNode({ id, data }: { id: string; data: any }) {
   const color = quadrantColors[data.quadrant] || "#6b7280";
   const label = quadrantLabels[data.quadrant] || "";
+  const { setColorOf, setIdOf } = useCluster();
+  const setColor: string | null = setColorOf[id] || null;
+  const setId: number | null =
+    typeof setIdOf[id] === "number" ? setIdOf[id] : null;
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(data.label);
   const [hovered, setHovered] = useState(false);
@@ -66,15 +71,28 @@ export default function TaskNode({ id, data }: { id: string; data: any }) {
         minWidth: "180px",
         maxWidth: "220px",
         fontFamily: "Inter, sans-serif",
-        boxShadow: hovered
-          ? `0 4px 24px ${color}30, 0 1px 4px #00000060`
-          : `0 4px 24px ${color}15, 0 1px 4px #00000060`,
+        boxShadow: setColor
+          ? `0 0 0 1.5px ${setColor}, 0 4px 24px ${setColor}40, 0 1px 4px #00000060`
+          : hovered
+            ? `0 4px 24px ${color}30, 0 1px 4px #00000060`
+            : `0 4px 24px ${color}15, 0 1px 4px #00000060`,
         transition: "all 0.2s",
         position: "relative",
         cursor: "grab",
       }}
     >
-      <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{
+          width: 8,
+          height: 8,
+          background: hovered ? color : "transparent",
+          border: hovered ? "1px solid #fff6" : "none",
+          opacity: hovered ? 1 : 0,
+          transition: "opacity 0.2s",
+        }}
+      />
 
       {/* Delete button */}
       {hovered && (
@@ -106,19 +124,56 @@ export default function TaskNode({ id, data }: { id: string; data: any }) {
         </button>
       )}
 
-      {/* Quadrant badge */}
+      {/* Quadrant badge + cluster pill */}
       <div
         style={{
-          fontSize: "9px",
-          fontWeight: 700,
-          letterSpacing: "1.5px",
-          color: color,
-          opacity: 0.8,
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
           marginBottom: "6px",
-          textTransform: "uppercase",
         }}
       >
-        {label}
+        <span
+          style={{
+            fontSize: "9px",
+            fontWeight: 700,
+            letterSpacing: "1.5px",
+            color: color,
+            opacity: 0.8,
+            textTransform: "uppercase",
+          }}
+        >
+          {label}
+        </span>
+        {setColor && setId !== null && (
+          <span
+            title="Linked task group"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              fontSize: "8px",
+              fontWeight: 700,
+              letterSpacing: "0.5px",
+              color: setColor,
+              background: `${setColor}1f`,
+              border: `1px solid ${setColor}55`,
+              borderRadius: "6px",
+              padding: "1px 5px",
+              textTransform: "uppercase",
+            }}
+          >
+            <span
+              style={{
+                width: "5px",
+                height: "5px",
+                borderRadius: "50%",
+                background: setColor,
+              }}
+            />
+            Group {setId + 1}
+          </span>
+        )}
       </div>
 
       {/* Label — editable on double click */}
@@ -192,7 +247,18 @@ export default function TaskNode({ id, data }: { id: string; data: any }) {
         </p>
       )}
 
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{
+          width: 8,
+          height: 8,
+          background: hovered ? color : "transparent",
+          border: hovered ? "1px solid #fff6" : "none",
+          opacity: hovered ? 1 : 0,
+          transition: "opacity 0.2s",
+        }}
+      />
     </div>
   );
 }
