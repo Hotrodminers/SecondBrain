@@ -7,6 +7,13 @@ YOUR JOB:
 1. Extract each distinct task or actionable item from the text
 2. Classify each into exactly one quadrant:
    - "do_now": Urgent AND Important. Deadlines within 1-2 days, critical obligations, things with consequences if missed.
+   - "schedule": Important but NOT Urgent. Long-term goals, skill building, career prep, health habits.
+   - "delegate": Urgent but NOT Important. Minor deadlines, busywork someone else could handle.
+   - "drop": Neither Urgent nor Important. Time-wasters, distractions.
+3. Assign an optional category tag when obvious (academics, career, health, personal, extracurricular)
+4. Add a brief note only when it adds useful context
+
+OUTPUT FORMAT: Respond with ONLY a valid JSON object. No markdown backticks. No explanation. No preamble. Just the raw JSON.
    - "schedule": Important but NOT Urgent. Long-term goals, skill building, career prep, health habits. Things that matter but have no immediate deadline.
    - "delegate": Urgent but NOT Important. Minor deadlines, busywork someone else could handle, low-stakes obligations.
    - "drop": Neither Urgent nor Important. Time-wasters, distractions, things the user should stop doing.
@@ -28,6 +35,29 @@ OUTPUT FORMAT: Respond with ONLY a valid JSON object. No markdown backticks. No 
 }
 
 RULES:
+- Maximum 10 nodes per dump
+- Labels must be 2-6 words, action-oriented
+- IDs must be "bd_1", "bd_2", "bd_3" etc.
+- Every node MUST have id, label, and quadrant. note and category can be null.
+- quadrant MUST be exactly one of: "do_now", "schedule", "delegate", "drop"
+- If input is empty or nonsensical, return {"nodes": []}
+- Do NOT invent tasks the user didn't mention
+- Do NOT return anything except the JSON object`;
+
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+
+function cleanAIResponse(raw: string): string {
+  let cleaned = raw.trim();
+  cleaned = cleaned.replace(/^```json\s*/i, '');
+  cleaned = cleaned.replace(/^```\s*/i, '');
+  cleaned = cleaned.replace(/\s*```$/i, '');
+  return cleaned.trim();
+}
+
+const VALID_QUADRANTS = ['do_now', 'schedule', 'delegate', 'drop'];
+
+function validateBrainDumpResponse(data: any) {
 - Maximum 10 nodes per dump. If the user lists more, keep the 10 most distinct items.
 - Labels must be 2-6 words, action-oriented (start with a verb when possible)
 - IDs must be "bd_1", "bd_2", "bd_3" etc. Always use the "bd_" prefix.
@@ -111,6 +141,13 @@ function validateBrainDumpResponse(data: any): BrainDumpResponse {
     return { nodes: [] };
   }
 
+  const validated = data.nodes
+    .filter((n: any) => {
+      return (
+        n &&
+        typeof n.label === 'string' &&
+        n.label.trim().length > 0 &&
+        typeof n.quadrant === 'string' &&
   const validated: BrainDumpNode[] = data.nodes
     .filter((n: any) => {
       return (
@@ -123,6 +160,11 @@ function validateBrainDumpResponse(data: any): BrainDumpResponse {
     })
     .slice(0, 10)
     .map((n: any, index: number) => ({
+      id: typeof n.id === 'string' ? n.id : `bd_${index + 1}`,
+      label: String(n.label).trim().slice(0, 60),
+      quadrant: n.quadrant,
+      note: n.note && typeof n.note === 'string' ? n.note.slice(0, 120) : null,
+      category: n.category && typeof n.category === 'string' ? n.category.slice(0, 30) : null,
       id: typeof n.id === "string" ? n.id : `bd_${index + 1}`,
       label: String(n.label).trim().slice(0, 60),
       quadrant: n.quadrant,
@@ -136,6 +178,9 @@ function validateBrainDumpResponse(data: any): BrainDumpResponse {
   return { nodes: validated };
 }
 
+async function callGemini(systemPrompt: string, userText: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 function validateYouTubeResponse(
   data: any,
   originalUrl: string,
@@ -181,12 +226,15 @@ async function callGemini(
   const combinedPrompt = `${systemPrompt}\n\n---\n\nUser input:\n${userText}`;
 
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: combinedPrompt }] }],
       generationConfig: {
         temperature: 0.3,
+        maxOutputTokens: 1024,
         maxOutputTokens: 2048,
       },
     }),
@@ -199,6 +247,26 @@ async function callGemini(
 
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Empty response from Gemini');
+  return text;
+}
+
+async function callClaude(systemPrompt: string, userText: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
+
+  const response = await fetch(CLAUDE_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userText }],
   if (!text) throw new Error("Empty response from Gemini");
   return text;
 }
@@ -233,6 +301,37 @@ async function callClaude(
 
   const data = await response.json();
   const text = data?.content?.[0]?.text;
+  if (!text) throw new Error('Empty response from Claude');
+  return text;
+}
+
+export async function classifyBrainDump(text: string) {
+  let raw: string;
+
+  try {
+    console.log('[AI] Attempting Gemini...');
+    raw = await callGemini(BRAINDUMP_PROMPT, text);
+    console.log('[AI] Gemini responded');
+  } catch (geminiError) {
+    console.error('[AI] Gemini failed:', geminiError);
+    try {
+      console.log('[AI] Falling back to Claude...');
+      raw = await callClaude(BRAINDUMP_PROMPT, text);
+      console.log('[AI] Claude responded');
+    } catch (claudeError) {
+      console.error('[AI] Claude also failed:', claudeError);
+      throw new Error('Both AI providers failed');
+    }
+  }
+
+  const cleaned = cleanAIResponse(raw);
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    console.error('[AI] JSON parse failed. Raw:', raw);
+    throw new Error('Failed to parse AI response');
   if (!text) throw new Error("Empty response from Claude");
   return text;
 }
