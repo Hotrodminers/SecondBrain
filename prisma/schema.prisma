@@ -5,8 +5,11 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  // Pooled connection (used at runtime by the app)
+  url       = env("DATABASE_URL")
+  // Direct connection (used by Prisma Migrate)
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
