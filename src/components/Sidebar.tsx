@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createYouTubeEdges } from "@/lib/quadrants";
 
 interface SidebarProps {
   onNodesReceived: (nodes: any[]) => void;
@@ -70,29 +71,17 @@ export default function Sidebar({
 
       const data = await response.json();
 
-      // Check for 'steps' because of Dev B's backend format
       if (data.steps && data.steps.length > 0) {
-        // 1. Map Dev B's steps into React Flow nodes
         const mappedNodes = data.steps.map((step: any, index: number) => ({
           id: step.id || `yt_${Date.now()}_${index}`,
           label: step.label,
           note: data.title || "YouTube Roadmap",
           quadrant: "schedule",
+          order: step.order || index + 1,
         }));
 
-        // 2. Create connecting edges sequentially
-        const mappedEdges = [];
-        for (let i = 0; i < mappedNodes.length - 1; i++) {
-          mappedEdges.push({
-            id: `e_${mappedNodes[i].id}_${mappedNodes[i + 1].id}`,
-            source: mappedNodes[i].id,
-            target: mappedNodes[i + 1].id,
-            animated: true,
-            style: { stroke: "#14b8a6", strokeWidth: 2 },
-          });
-        }
+        const mappedEdges = createYouTubeEdges(mappedNodes);
 
-        // 3. Send to Canvas
         onNodesReceived(mappedNodes);
         if (onEdgesReceived) {
           onEdgesReceived(mappedEdges);
