@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  serverExternalPackages: ["youtube-transcript"],
   turbopack: {
     root: fileURLToPath(new URL(".", import.meta.url))
   }
