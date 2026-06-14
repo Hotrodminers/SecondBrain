@@ -56,7 +56,10 @@ export default function TaskNode({ id, data }: { id: string; data: any }) {
       onDoubleClick={handleDoubleClick}
       style={{
         background: "#161616",
-        border: `1.5px solid ${hovered ? color + "66" : color + "33"}`,
+        // FIX: Split borders to avoid conflict with borderLeft
+        borderTop: `1.5px solid ${hovered ? color + "66" : color + "33"}`,
+        borderRight: `1.5px solid ${hovered ? color + "66" : color + "33"}`,
+        borderBottom: `1.5px solid ${hovered ? color + "66" : color + "33"}`,
         borderLeft: `3px solid ${color}`,
         borderRadius: "10px",
         padding: "12px 14px",
