@@ -4,7 +4,7 @@ import { useState } from "react";
 
 interface SidebarProps {
   onNodesReceived: (nodes: any[]) => void;
-  onEdgesReceived?: (edges: any[]) => void; // Added to support connected roadmap edges
+  onEdgesReceived?: (edges: any[]) => void;
   onClear: () => void;
   onLoadingChange: (loading: boolean) => void;
 }
@@ -70,11 +70,34 @@ export default function Sidebar({
 
       const data = await response.json();
 
-      if (data.nodes && data.nodes.length > 0) {
-        onNodesReceived(data.nodes);
-        if (data.edges && onEdgesReceived) {
-          onEdgesReceived(data.edges);
+      // Check for 'steps' because of Dev B's backend format
+      if (data.steps && data.steps.length > 0) {
+        // 1. Map Dev B's steps into React Flow nodes
+        const mappedNodes = data.steps.map((step: any, index: number) => ({
+          id: step.id || `yt_${Date.now()}_${index}`,
+          label: step.label,
+          note: data.title || "YouTube Roadmap",
+          quadrant: "schedule",
+        }));
+
+        // 2. Create connecting edges sequentially
+        const mappedEdges = [];
+        for (let i = 0; i < mappedNodes.length - 1; i++) {
+          mappedEdges.push({
+            id: `e_${mappedNodes[i].id}_${mappedNodes[i + 1].id}`,
+            source: mappedNodes[i].id,
+            target: mappedNodes[i + 1].id,
+            animated: true,
+            style: { stroke: "#14b8a6", strokeWidth: 2 },
+          });
         }
+
+        // 3. Send to Canvas
+        onNodesReceived(mappedNodes);
+        if (onEdgesReceived) {
+          onEdgesReceived(mappedEdges);
+        }
+
         setYtUrl("");
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
@@ -82,6 +105,7 @@ export default function Sidebar({
         setError("Could not extract a learning path from this video.");
       }
     } catch (err) {
+      console.error("YouTube Error:", err);
       setError("Failed to process YouTube video. Check the console.");
     } finally {
       setLoading(false);
@@ -423,7 +447,6 @@ export default function Sidebar({
         ))}
       </div>
 
-      {/* Clear Button */}
       <button
         onClick={onClear}
         style={{
