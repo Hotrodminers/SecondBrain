@@ -149,6 +149,7 @@ export default function Canvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [showSkeleton, setShowSkeleton] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     const saved = loadCanvasState();
@@ -227,11 +228,14 @@ export default function Canvas() {
         onEdgesReceived={handleEdgesReceived}
         onClear={handleClear}
         onLoadingChange={setShowSkeleton}
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((c) => !c)}
       />
 
       <div
         style={{
-          marginLeft: "320px",
+          marginLeft: collapsed ? "0px" : "320px",
+          transition: "margin-left 0.25s ease",
           flex: 1,
           height: "100vh",
           position: "relative",
