@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { YoutubeTranscript } from 'youtube-transcript';
+import { NextRequest, NextResponse } from "next/server";
+import { YoutubeTranscript } from "youtube-transcript";
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_API_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 const YOUTUBE_PROMPT = `You are a productivity assistant that extracts actionable steps from video transcripts.
 
@@ -37,36 +38,42 @@ RULES:
 
 function extractVideoId(url: string): string | null {
   const match = url.match(
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
   );
   return match ? match[1] : null;
 }
 
 function cleanAIResponse(raw: string): string {
   let cleaned = raw.trim();
-  cleaned = cleaned.replace(/^```json\s*/i, '');
-  cleaned = cleaned.replace(/^```\s*/i, '');
-  cleaned = cleaned.replace(/\s*```$/i, '');
+  cleaned = cleaned.replace(/^```json\s*/i, "");
+  cleaned = cleaned.replace(/^```\s*/i, "");
+  cleaned = cleaned.replace(/\s*```$/i, "");
   return cleaned.trim();
 }
 
 function validateYouTubeResponse(data: any, originalUrl: string) {
   if (!data || !data.steps || !Array.isArray(data.steps)) {
-    return { title: 'Unknown', source_url: originalUrl, steps: [] };
+    return { title: "Unknown", source_url: originalUrl, steps: [] };
   }
 
   const validated = data.steps
-    .filter((s: any) => s && typeof s.label === 'string' && s.label.trim().length > 0)
+    .filter(
+      (s: any) => s && typeof s.label === "string" && s.label.trim().length > 0,
+    )
     .slice(0, 12)
     .map((s: any, index: number) => ({
-      id: typeof s.id === 'string' ? s.id : `yt_${index + 1}`,
+      id: typeof s.id === "string" ? s.id : `yt_${index + 1}`,
       label: String(s.label).trim().slice(0, 80),
-      order: typeof s.order === 'number' ? s.order : index + 1,
-      detail: s.detail && typeof s.detail === 'string' ? s.detail.slice(0, 150) : null,
+      order: typeof s.order === "number" ? s.order : index + 1,
+      detail:
+        s.detail && typeof s.detail === "string"
+          ? s.detail.slice(0, 150)
+          : null,
     }));
 
   return {
-    title: typeof data.title === 'string' ? data.title.slice(0, 100) : 'Unknown',
+    title:
+      typeof data.title === "string" ? data.title.slice(0, 100) : "Unknown",
     source_url: originalUrl,
     steps: validated,
   };
@@ -77,14 +84,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { url } = body;
 
-    if (!url || typeof url !== 'string') {
-      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+    if (!url || typeof url !== "string") {
+      return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
     // 1. Extract video ID
     const videoId = extractVideoId(url.trim());
     if (!videoId) {
-      return NextResponse.json({ error: 'Invalid YouTube URL' }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid YouTube URL" },
+        { status: 400 },
+      );
     }
 
     // 2. Fetch transcript
@@ -92,36 +102,39 @@ export async function POST(req: NextRequest) {
     let transcript: string;
     try {
       const segments = await YoutubeTranscript.fetchTranscript(videoId);
-      transcript = segments.map((s: any) => s.text).join(' ');
+      transcript = segments.map((s: any) => s.text).join(" ");
     } catch {
       return NextResponse.json(
-        { error: 'Could not fetch transcript. Video may not have captions.' },
-        { status: 400 }
+        { error: "Could not fetch transcript. Video may not have captions." },
+        { status: 400 },
       );
     }
 
     if (!transcript || transcript.trim().length < 50) {
       return NextResponse.json(
-        { error: 'Transcript too short to extract steps.' },
-        { status: 400 }
+        { error: "Transcript too short to extract steps." },
+        { status: 400 },
       );
     }
 
-    // 3. Truncate to ~3000 words to avoid token limits
-    const truncated = transcript.split(' ').slice(0, 3000).join(' ');
+    // 3. MUCH SAFER TRUNCATION FOR FREE TIER (Dropped from 3000 to 800 words)
+    const truncated = transcript.split(" ").slice(0, 800).join(" ");
 
     // 4. Send to Gemini
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'AI service not configured' }, { status: 503 });
+      return NextResponse.json(
+        { error: "AI service not configured" },
+        { status: 503 },
+      );
     }
 
     const combinedPrompt = `${YOUTUBE_PROMPT}\n\n---\n\nSource URL: ${url}\n\nTranscript:\n${truncated}`;
 
     console.log(`[YouTube] Sending ${truncated.length} chars to Gemini...`);
     const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: combinedPrompt }] }],
         generationConfig: {
@@ -133,14 +146,17 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[YouTube] Gemini error:', errorText);
-      return NextResponse.json({ error: 'AI processing failed' }, { status: 503 });
+      console.error("[YouTube] Gemini error:", errorText);
+      return NextResponse.json(
+        { error: "AI processing failed" },
+        { status: 503 },
+      );
     }
 
     const data = await response.json();
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawText) {
-      return NextResponse.json({ error: 'Empty AI response' }, { status: 500 });
+      return NextResponse.json({ error: "Empty AI response" }, { status: 500 });
     }
 
     // 5. Parse and validate
@@ -149,20 +165,22 @@ export async function POST(req: NextRequest) {
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      console.error('[YouTube] JSON parse failed. Raw:', rawText);
-      return NextResponse.json({ error: 'Failed to parse AI response' }, { status: 500 });
+      console.error("[YouTube] JSON parse failed. Raw:", rawText);
+      return NextResponse.json(
+        { error: "Failed to parse AI response" },
+        { status: 500 },
+      );
     }
 
     const result = validateYouTubeResponse(parsed, url);
     console.log(`[YouTube] Returned ${result.steps.length} steps`);
 
     return NextResponse.json(result);
-
   } catch (error) {
-    console.error('[YouTube] Error:', error);
+    console.error("[YouTube] Error:", error);
     return NextResponse.json(
-      { error: 'Failed to process video' },
-      { status: 500 }
+      { error: "Failed to process video" },
+      { status: 500 },
     );
   }
 }

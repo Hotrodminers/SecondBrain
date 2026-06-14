@@ -4,18 +4,28 @@ import { useState } from "react";
 
 interface SidebarProps {
   onNodesReceived: (nodes: any[]) => void;
+  onEdgesReceived?: (edges: any[]) => void;
   onClear: () => void;
+  onLoadingChange: (loading: boolean) => void;
 }
 
-export default function Sidebar({ onNodesReceived, onClear }: SidebarProps) {
+export default function Sidebar({
+  onNodesReceived,
+  onEdgesReceived,
+  onClear,
+  onLoadingChange,
+}: SidebarProps) {
+  const [activeTab, setActiveTab] = useState<"dump" | "youtube">("dump");
   const [text, setText] = useState("");
+  const [ytUrl, setYtUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleBrainDumpSubmit = async () => {
     if (!text.trim() || loading) return;
     setLoading(true);
+    onLoadingChange(true);
     setError("");
     setSuccess(false);
 
@@ -40,6 +50,66 @@ export default function Sidebar({ onNodesReceived, onClear }: SidebarProps) {
       setError("Something went wrong. Try again.");
     } finally {
       setLoading(false);
+      onLoadingChange(false);
+    }
+  };
+
+  const handleYoutubeSubmit = async () => {
+    if (!ytUrl.trim() || loading) return;
+    setLoading(true);
+    onLoadingChange(true);
+    setError("");
+    setSuccess(false);
+
+    try {
+      const response = await fetch("/api/youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: ytUrl }),
+      });
+
+      const data = await response.json();
+
+      // Check for 'steps' because of Dev B's backend format
+      if (data.steps && data.steps.length > 0) {
+        // 1. Map Dev B's steps into React Flow nodes
+        const mappedNodes = data.steps.map((step: any, index: number) => ({
+          id: step.id || `yt_${Date.now()}_${index}`,
+          label: step.label,
+          note: data.title || "YouTube Roadmap",
+          quadrant: "schedule",
+        }));
+
+        // 2. Create connecting edges sequentially
+        const mappedEdges = [];
+        for (let i = 0; i < mappedNodes.length - 1; i++) {
+          mappedEdges.push({
+            id: `e_${mappedNodes[i].id}_${mappedNodes[i + 1].id}`,
+            source: mappedNodes[i].id,
+            target: mappedNodes[i + 1].id,
+            animated: true,
+            style: { stroke: "#14b8a6", strokeWidth: 2 },
+          });
+        }
+
+        // 3. Send to Canvas
+        onNodesReceived(mappedNodes);
+        if (onEdgesReceived) {
+          onEdgesReceived(mappedEdges);
+        }
+
+        setYtUrl("");
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError("Could not extract a learning path from this video.");
+      }
+    } catch (err) {
+      console.error("YouTube Error:", err);
+      setError("Failed to process YouTube video. Check the console.");
+    } finally {
+      setLoading(false);
+      onLoadingChange(false);
     }
   };
 
@@ -90,7 +160,7 @@ export default function Sidebar({ onNodesReceived, onClear }: SidebarProps) {
               letterSpacing: "0.3px",
             }}
           >
-            Brain Dump
+            Visual Second Brain
           </h2>
         </div>
         <p
@@ -101,69 +171,205 @@ export default function Sidebar({ onNodesReceived, onClear }: SidebarProps) {
             paddingLeft: "18px",
           }}
         >
-          AI sorts chaos into your Eisenhower matrix
+          Organize chaos and learn step-by-step
         </p>
       </div>
 
-      {/* Divider */}
-      <div style={{ height: "1px", background: "#1e1e1e" }} />
+      {/* Tab Selector */}
+      <div
+        style={{
+          display: "flex",
+          background: "#161616",
+          borderRadius: "8px",
+          padding: "4px",
+          gap: "4px",
+        }}
+      >
+        <button
+          onClick={() => setActiveTab("dump")}
+          style={{
+            flex: 1,
+            background: activeTab === "dump" ? "#222" : "transparent",
+            color: activeTab === "dump" ? "#fff" : "#666",
+            border: "none",
+            borderRadius: "6px",
+            padding: "8px",
+            fontSize: "12px",
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+        >
+          Brain Dump
+        </button>
+        <button
+          onClick={() => setActiveTab("youtube")}
+          style={{
+            flex: 1,
+            background: activeTab === "youtube" ? "#222" : "transparent",
+            color: activeTab === "youtube" ? "#fff" : "#666",
+            border: "none",
+            borderRadius: "6px",
+            padding: "8px",
+            fontSize: "12px",
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+        >
+          YT Roadmap
+        </button>
+      </div>
 
-      {/* Textarea */}
+      {/* Main Form Area */}
       <div
         style={{
           flex: 1,
           display: "flex",
           flexDirection: "column",
-          gap: "8px",
+          gap: "12px",
         }}
       >
-        <label
-          style={{
-            color: "#888",
-            fontSize: "11px",
-            letterSpacing: "1px",
-            textTransform: "uppercase",
-          }}
-        >
-          What's on your mind?
-        </label>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && e.ctrlKey) handleSubmit();
-          }}
-          placeholder="Study for DBMS exam tomorrow, finish portfolio, stop scrolling Instagram, reply to prof email..."
-          style={{
-            background: "#161616",
-            border: "1px solid #2a2a2a",
-            borderRadius: "10px",
-            color: "#e5e5e5",
-            padding: "14px",
-            fontSize: "13px",
-            resize: "none",
-            height: "220px",
-            fontFamily: "Inter, sans-serif",
-            lineHeight: "1.6",
-            outline: "none",
-            transition: "border-color 0.2s",
-          }}
-          onFocus={(e) => (e.target.style.borderColor = "#2d5a3f")}
-          onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
-        />
-        <p
-          style={{
-            color: "#444",
-            fontSize: "11px",
-            margin: 0,
-            textAlign: "right",
-          }}
-        >
-          {text.length} chars · Ctrl+Enter to submit
-        </p>
+        {activeTab === "dump" ? (
+          <>
+            <label
+              style={{
+                color: "#888",
+                fontSize: "11px",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+              }}
+            >
+              What's on your mind?
+            </label>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && e.ctrlKey) handleBrainDumpSubmit();
+              }}
+              placeholder="Study for DBMS exam tomorrow, finish portfolio, stop scrolling Instagram, reply to prof email..."
+              style={{
+                background: "#161616",
+                border: "1px solid #2a2a2a",
+                borderRadius: "10px",
+                color: "#e5e5e5",
+                padding: "14px",
+                fontSize: "13px",
+                resize: "none",
+                height: "220px",
+                fontFamily: "Inter, sans-serif",
+                lineHeight: "1.6",
+                outline: "none",
+                transition: "border-color 0.2s",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = "#2d5a3f")}
+              onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
+            />
+            <p
+              style={{
+                color: "#444",
+                fontSize: "11px",
+                margin: 0,
+                textAlign: "right",
+              }}
+            >
+              {text.length} chars · Ctrl+Enter to submit
+            </p>
+
+            <button
+              onClick={handleBrainDumpSubmit}
+              disabled={loading || !text.trim()}
+              style={{
+                background: loading || !text.trim() ? "#1a1a1a" : "#2d5a3f",
+                color: loading || !text.trim() ? "#444" : "#fff",
+                border: "1px solid",
+                borderColor: loading || !text.trim() ? "#2a2a2a" : "#2d5a3f",
+                borderRadius: "10px",
+                padding: "13px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: loading || !text.trim() ? "not-allowed" : "pointer",
+                fontFamily: "Inter, sans-serif",
+                transition: "all 0.2s",
+                letterSpacing: "0.3px",
+              }}
+            >
+              {loading ? "⏳ Organizing..." : "→ Organize My Thoughts"}
+            </button>
+          </>
+        ) : (
+          <>
+            <label
+              style={{
+                color: "#888",
+                fontSize: "11px",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+              }}
+            >
+              YouTube Video URL
+            </label>
+            <input
+              type="text"
+              value={ytUrl}
+              onChange={(e) => setYtUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleYoutubeSubmit();
+              }}
+              placeholder="https://www.youtube.com/watch?v=..."
+              style={{
+                background: "#161616",
+                border: "1px solid #2a2a2a",
+                borderRadius: "10px",
+                color: "#e5e5e5",
+                padding: "14px",
+                fontSize: "13px",
+                fontFamily: "Inter, sans-serif",
+                outline: "none",
+                transition: "border-color 0.2s",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = "#2d5a3f")}
+              onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
+            />
+            <p
+              style={{
+                color: "#555",
+                fontSize: "11px",
+                margin: 0,
+                lineHeight: "1.4",
+              }}
+            >
+              Paste any tutorial URL. AI will break it down into a linear
+              learning milestone chain inside your Schedule quadrant.
+            </p>
+
+            <button
+              onClick={handleYoutubeSubmit}
+              disabled={loading || !ytUrl.trim()}
+              style={{
+                background: loading || !ytUrl.trim() ? "#1a1a1a" : "#14b8a6",
+                color: loading || !ytUrl.trim() ? "#444" : "#fff",
+                border: "1px solid",
+                borderColor: loading || !ytUrl.trim() ? "#2a2a2a" : "#14b8a6",
+                borderRadius: "10px",
+                padding: "13px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: loading || !ytUrl.trim() ? "not-allowed" : "pointer",
+                fontFamily: "Inter, sans-serif",
+                transition: "all 0.2s",
+                letterSpacing: "0.3px",
+                marginTop: "8px",
+              }}
+            >
+              {loading ? "⏳ Building Roadmap..." : "⚡ Generate Study Path"}
+            </button>
+          </>
+        )}
       </div>
 
-      {/* Error */}
+      {/* Status Messages */}
       {error && (
         <div
           style={{
@@ -179,7 +385,6 @@ export default function Sidebar({ onNodesReceived, onClear }: SidebarProps) {
         </div>
       )}
 
-      {/* Success */}
       {success && (
         <div
           style={{
@@ -191,31 +396,9 @@ export default function Sidebar({ onNodesReceived, onClear }: SidebarProps) {
             fontSize: "12px",
           }}
         >
-          ✓ Nodes added to your canvas!
+          ✓ Canvas synced perfectly!
         </div>
       )}
-
-      {/* Submit Button */}
-      <button
-        onClick={handleSubmit}
-        disabled={loading || !text.trim()}
-        style={{
-          background: loading || !text.trim() ? "#1a1a1a" : "#2d5a3f",
-          color: loading || !text.trim() ? "#444" : "#fff",
-          border: "1px solid",
-          borderColor: loading || !text.trim() ? "#2a2a2a" : "#2d5a3f",
-          borderRadius: "10px",
-          padding: "13px",
-          fontSize: "14px",
-          fontWeight: 600,
-          cursor: loading || !text.trim() ? "not-allowed" : "pointer",
-          fontFamily: "Inter, sans-serif",
-          transition: "all 0.2s",
-          letterSpacing: "0.3px",
-        }}
-      >
-        {loading ? "⏳ Organizing..." : "→ Organize My Thoughts"}
-      </button>
 
       {/* Quadrant Legend */}
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -264,7 +447,6 @@ export default function Sidebar({ onNodesReceived, onClear }: SidebarProps) {
         ))}
       </div>
 
-      {/* Clear Button */}
       <button
         onClick={onClear}
         style={{
