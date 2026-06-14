@@ -10,6 +10,8 @@ interface SidebarProps {
   onEdgesReceived?: (edges: any[]) => void;
   onClear: () => void;
   onLoadingChange: (loading: boolean) => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export default function Sidebar({
@@ -17,6 +19,8 @@ export default function Sidebar({
   onEdgesReceived,
   onClear,
   onLoadingChange,
+  collapsed = false,
+  onToggleCollapse,
 }: SidebarProps) {
   const { data: session } = useSession();
   const [activeTab, setActiveTab] = useState<"dump" | "youtube">("dump");
@@ -106,6 +110,36 @@ export default function Sidebar({
     }
   };
 
+  if (collapsed) {
+    return (
+      <button
+        onClick={onToggleCollapse}
+        title="Expand panel"
+        style={{
+          position: "fixed",
+          left: "16px",
+          top: "16px",
+          zIndex: 20,
+          width: "40px",
+          height: "40px",
+          borderRadius: "10px",
+          background: "#161616",
+          border: "1px solid #2a2a2a",
+          color: "#e5e5e5",
+          fontSize: "18px",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "Inter, sans-serif",
+          boxShadow: "0 4px 16px #00000080",
+        }}
+      >
+        ☰
+      </button>
+    );
+  }
+
   return (
     <div
       style={{
@@ -123,10 +157,53 @@ export default function Sidebar({
         top: 0,
         zIndex: 10,
         boxSizing: "border-box",
+        overflowY: "auto",
       }}
     >
       {/* Header */}
       <div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "10px",
+          }}
+        >
+          <Link
+            href="/"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              color: "#666",
+              fontSize: "12px",
+              textDecoration: "none",
+            }}
+          >
+            <span style={{ fontSize: "14px", lineHeight: 1 }}>←</span> Home
+          </Link>
+          <button
+            onClick={onToggleCollapse}
+            title="Collapse panel"
+            style={{
+              background: "transparent",
+              border: "1px solid #2a2a2a",
+              borderRadius: "8px",
+              color: "#888",
+              width: "28px",
+              height: "28px",
+              fontSize: "14px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: "Inter, sans-serif",
+            }}
+          >
+            «
+          </button>
+        </div>
         <div
           style={{
             display: "flex",
@@ -443,12 +520,13 @@ export default function Sidebar({
       <button
         onClick={onClear}
         style={{
-          background: "transparent",
-          color: "#444",
-          border: "1px solid #222",
+          background: "rgba(239, 68, 68, 0.08)",
+          color: "#f87171",
+          border: "1px solid #ef444455",
           borderRadius: "8px",
-          padding: "8px",
+          padding: "9px",
           fontSize: "12px",
+          fontWeight: 600,
           cursor: "pointer",
           fontFamily: "Inter, sans-serif",
         }}

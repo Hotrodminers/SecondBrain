@@ -1,8 +1,8 @@
 const quadrants = [
-  { label: "Do Now", color: "rgba(239, 68, 68, 0.15)", borderRight: true, borderBottom: true },
-  { label: "Schedule", color: "rgba(20, 184, 166, 0.15)", borderRight: false, borderBottom: true },
-  { label: "Delegate", color: "rgba(245, 158, 11, 0.15)", borderRight: true, borderBottom: false },
-  { label: "Drop", color: "rgba(107, 114, 128, 0.15)", borderRight: false, borderBottom: false },
+  { label: "Do Now", color: "rgba(239, 68, 68, 0.32)", borderRight: true, borderBottom: true },
+  { label: "Schedule", color: "rgba(20, 184, 166, 0.32)", borderRight: false, borderBottom: true },
+  { label: "Delegate", color: "rgba(245, 158, 11, 0.40)", borderRight: true, borderBottom: false },
+  { label: "Drop", color: "rgba(107, 114, 128, 0.32)", borderRight: false, borderBottom: false },
 ];
 
 const borderColor = "rgba(173, 188, 255, 0.08)";
