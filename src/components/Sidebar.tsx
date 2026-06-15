@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { createYouTubeEdges } from "@/lib/quadrants";
+import { NODE_TEMPLATES, CATEGORY_LABELS, NodeTemplate } from "@/lib/templates";
 
 interface SidebarProps {
   onNodesReceived: (nodes: any[], options?: { linkAll?: boolean }) => void;
@@ -23,12 +24,22 @@ export default function Sidebar({
   onToggleCollapse,
 }: SidebarProps) {
   const { data: session } = useSession();
-  const [activeTab, setActiveTab] = useState<"dump" | "youtube">("dump");
+  const [activeTab, setActiveTab] = useState<"dump" | "youtube" | "templates">(
+    "dump",
+  );
   const [text, setText] = useState("");
   const [ytUrl, setYtUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+
+  // Template preview/edit modal state
+  const [previewTemplate, setPreviewTemplate] = useState<NodeTemplate | null>(
+    null,
+  );
+  const [previewLabel, setPreviewLabel] = useState("");
+  const [previewNote, setPreviewNote] = useState("");
+  const [previewQuadrant, setPreviewQuadrant] = useState<string>("do_now");
 
   const handleBrainDumpSubmit = async () => {
     if (!text.trim() || loading) return;
@@ -110,6 +121,33 @@ export default function Sidebar({
       setLoading(false);
       onLoadingChange(false);
     }
+  };
+
+  const openTemplatePreview = (tpl: NodeTemplate) => {
+    setPreviewTemplate(tpl);
+    setPreviewLabel(tpl.label);
+    setPreviewNote(tpl.note);
+    setPreviewQuadrant(tpl.quadrant);
+  };
+
+  const closeTemplatePreview = () => {
+    setPreviewTemplate(null);
+  };
+
+  const confirmAddTemplate = () => {
+    if (!previewLabel.trim()) return;
+
+    const newNode = {
+      id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      label: previewLabel.trim(),
+      note: previewNote.trim() || undefined,
+      quadrant: previewQuadrant,
+    };
+
+    onNodesReceived([newNode]);
+    setPreviewTemplate(null);
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
   };
 
   if (collapsed) {
@@ -291,6 +329,23 @@ export default function Sidebar({
         >
           YT Roadmap
         </button>
+        <button
+          onClick={() => setActiveTab("templates")}
+          style={{
+            flex: 1,
+            background: activeTab === "templates" ? "#222" : "transparent",
+            color: activeTab === "templates" ? "#fff" : "#666",
+            border: "none",
+            borderRadius: "6px",
+            padding: "8px",
+            fontSize: "12px",
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+        >
+          Templates
+        </button>
       </div>
 
       {/* Main Form Area */}
@@ -300,6 +355,7 @@ export default function Sidebar({
           display: "flex",
           flexDirection: "column",
           gap: "12px",
+          minHeight: 0,
         }}
       >
         {activeTab === "dump" ? (
@@ -370,7 +426,7 @@ export default function Sidebar({
               {loading ? "⏳ Organizing..." : "→ Organize My Thoughts"}
             </button>
           </>
-        ) : (
+        ) : activeTab === "youtube" ? (
           <>
             <label
               style={{
@@ -437,6 +493,96 @@ export default function Sidebar({
             >
               {loading ? "⏳ Building Roadmap..." : "⚡ Generate Study Path"}
             </button>
+          </>
+        ) : (
+          <>
+            <label
+              style={{
+                color: "#888",
+                fontSize: "11px",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+              }}
+            >
+              Quick-Add Templates
+            </label>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "14px",
+                overflowY: "auto",
+                flex: 1,
+              }}
+            >
+              {Object.entries(CATEGORY_LABELS).map(([catKey, catLabel]) => (
+                <div key={catKey}>
+                  <p
+                    style={{
+                      color: "#555",
+                      fontSize: "10px",
+                      letterSpacing: "1px",
+                      textTransform: "uppercase",
+                      margin: "0 0 6px",
+                    }}
+                  >
+                    {catLabel}
+                  </p>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                    }}
+                  >
+                    {NODE_TEMPLATES.filter((t) => t.category === catKey).map(
+                      (tpl) => (
+                        <button
+                          key={tpl.id}
+                          onClick={() => openTemplatePreview(tpl)}
+                          style={{
+                            background: "#161616",
+                            border: "1px solid #2a2a2a",
+                            borderRadius: "8px",
+                            padding: "10px 12px",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontFamily: "Inter, sans-serif",
+                            transition: "border-color 0.2s",
+                          }}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.borderColor = "#2d5a3f")
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.borderColor = "#2a2a2a")
+                          }
+                        >
+                          <p
+                            style={{
+                              margin: 0,
+                              color: "#e5e5e5",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {tpl.label}
+                          </p>
+                          <p
+                            style={{
+                              margin: "4px 0 0",
+                              color: "#666",
+                              fontSize: "11px",
+                            }}
+                          >
+                            {tpl.note}
+                          </p>
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </>
         )}
       </div>
@@ -630,6 +776,139 @@ export default function Sidebar({
           Sign out
         </button>
       </div>
+
+      {/* Template Preview / Edit Modal */}
+      {previewTemplate && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          onClick={closeTemplatePreview}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#161616",
+              border: "1px solid #2a2a2a",
+              borderRadius: "12px",
+              padding: "20px",
+              width: "300px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              fontFamily: "Inter, sans-serif",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                color: "#fff",
+                fontSize: "14px",
+                fontWeight: 600,
+              }}
+            >
+              Add Template
+            </p>
+
+            <label style={{ color: "#888", fontSize: "11px" }}>Label</label>
+            <input
+              value={previewLabel}
+              onChange={(e) => setPreviewLabel(e.target.value)}
+              style={{
+                background: "#0f0f0f",
+                border: "1px solid #2a2a2a",
+                borderRadius: "6px",
+                color: "#e5e5e5",
+                padding: "8px 10px",
+                fontSize: "13px",
+                fontFamily: "Inter, sans-serif",
+                outline: "none",
+              }}
+            />
+
+            <label style={{ color: "#888", fontSize: "11px" }}>Note</label>
+            <input
+              value={previewNote}
+              onChange={(e) => setPreviewNote(e.target.value)}
+              style={{
+                background: "#0f0f0f",
+                border: "1px solid #2a2a2a",
+                borderRadius: "6px",
+                color: "#e5e5e5",
+                padding: "8px 10px",
+                fontSize: "13px",
+                fontFamily: "Inter, sans-serif",
+                outline: "none",
+              }}
+            />
+
+            <label style={{ color: "#888", fontSize: "11px" }}>Quadrant</label>
+            <select
+              value={previewQuadrant}
+              onChange={(e) => setPreviewQuadrant(e.target.value)}
+              style={{
+                background: "#0f0f0f",
+                border: "1px solid #2a2a2a",
+                borderRadius: "6px",
+                color: "#e5e5e5",
+                padding: "8px 10px",
+                fontSize: "13px",
+                fontFamily: "Inter, sans-serif",
+                outline: "none",
+              }}
+            >
+              <option value="do_now">Do Now — Urgent + Important</option>
+              <option value="schedule">Schedule — Important, not urgent</option>
+              <option value="delegate">Delegate — Urgent, not important</option>
+              <option value="drop">Drop — Neither</option>
+            </select>
+
+            <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+              <button
+                onClick={closeTemplatePreview}
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: "8px",
+                  color: "#888",
+                  padding: "10px",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  fontFamily: "Inter, sans-serif",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAddTemplate}
+                disabled={!previewLabel.trim()}
+                style={{
+                  flex: 1,
+                  background: !previewLabel.trim() ? "#1a1a1a" : "#2d5a3f",
+                  border: "1px solid",
+                  borderColor: !previewLabel.trim() ? "#2a2a2a" : "#2d5a3f",
+                  borderRadius: "8px",
+                  color: !previewLabel.trim() ? "#444" : "#fff",
+                  padding: "10px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: !previewLabel.trim() ? "not-allowed" : "pointer",
+                  fontFamily: "Inter, sans-serif",
+                }}
+              >
+                Add to Canvas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
