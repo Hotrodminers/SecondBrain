@@ -58,8 +58,6 @@ export default function Sidebar({
       const data = await response.json();
 
       if (data.nodes && data.nodes.length > 0) {
-        // linkAll: re-run relationship extraction across the whole board so
-        // these new tasks connect to anything already on the canvas.
         onNodesReceived(data.nodes, { linkAll: true });
         setText("");
         setSuccess(true);
@@ -197,11 +195,11 @@ export default function Sidebar({
         top: 0,
         zIndex: 10,
         boxSizing: "border-box",
-        overflowY: "auto",
+        overflow: "hidden",
       }}
     >
       {/* Header */}
-      <div>
+      <div style={{ flexShrink: 0 }}>
         <div
           style={{
             display: "flex",
@@ -293,6 +291,7 @@ export default function Sidebar({
           borderRadius: "8px",
           padding: "4px",
           gap: "4px",
+          flexShrink: 0,
         }}
       >
         <button
@@ -348,433 +347,464 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Main Form Area */}
+      {/* Scrollable content area: form area + status + legend */}
       <div
         style={{
-          flex: 1,
+          flex: "1 1 auto",
           display: "flex",
           flexDirection: "column",
-          gap: "12px",
+          gap: "16px",
           minHeight: 0,
+          overflowY: "auto",
         }}
       >
-        {activeTab === "dump" ? (
-          <>
-            <label
-              style={{
-                color: "#888",
-                fontSize: "11px",
-                letterSpacing: "1px",
-                textTransform: "uppercase",
-              }}
-            >
-              What's on your mind?
-            </label>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && e.ctrlKey) handleBrainDumpSubmit();
-              }}
-              placeholder="Study for DBMS exam tomorrow, finish portfolio, stop scrolling Instagram, reply to prof email..."
-              style={{
-                background: "#161616",
-                border: "1px solid #2a2a2a",
-                borderRadius: "10px",
-                color: "#e5e5e5",
-                padding: "14px",
-                fontSize: "13px",
-                resize: "none",
-                height: "220px",
-                fontFamily: "Inter, sans-serif",
-                lineHeight: "1.6",
-                outline: "none",
-                transition: "border-color 0.2s",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = "#2d5a3f")}
-              onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
-            />
-            <p
-              style={{
-                color: "#444",
-                fontSize: "11px",
-                margin: 0,
-                textAlign: "right",
-              }}
-            >
-              {text.length} chars · Ctrl+Enter to submit
-            </p>
-
-            <button
-              onClick={handleBrainDumpSubmit}
-              disabled={loading || !text.trim()}
-              style={{
-                background: loading || !text.trim() ? "#1a1a1a" : "#2d5a3f",
-                color: loading || !text.trim() ? "#444" : "#fff",
-                border: "1px solid",
-                borderColor: loading || !text.trim() ? "#2a2a2a" : "#2d5a3f",
-                borderRadius: "10px",
-                padding: "13px",
-                fontSize: "14px",
-                fontWeight: 600,
-                cursor: loading || !text.trim() ? "not-allowed" : "pointer",
-                fontFamily: "Inter, sans-serif",
-                transition: "all 0.2s",
-                letterSpacing: "0.3px",
-              }}
-            >
-              {loading ? "⏳ Organizing..." : "→ Organize My Thoughts"}
-            </button>
-          </>
-        ) : activeTab === "youtube" ? (
-          <>
-            <label
-              style={{
-                color: "#888",
-                fontSize: "11px",
-                letterSpacing: "1px",
-                textTransform: "uppercase",
-              }}
-            >
-              YouTube Video URL
-            </label>
-            <input
-              type="text"
-              value={ytUrl}
-              onChange={(e) => setYtUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleYoutubeSubmit();
-              }}
-              placeholder="https://www.youtube.com/watch?v=..."
-              style={{
-                background: "#161616",
-                border: "1px solid #2a2a2a",
-                borderRadius: "10px",
-                color: "#e5e5e5",
-                padding: "14px",
-                fontSize: "13px",
-                fontFamily: "Inter, sans-serif",
-                outline: "none",
-                transition: "border-color 0.2s",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = "#2d5a3f")}
-              onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
-            />
-            <p
-              style={{
-                color: "#555",
-                fontSize: "11px",
-                margin: 0,
-                lineHeight: "1.4",
-              }}
-            >
-              Paste any tutorial URL. AI will break it down into a linear
-              learning milestone chain inside your Schedule quadrant.
-            </p>
-
-            <button
-              onClick={handleYoutubeSubmit}
-              disabled={loading || !ytUrl.trim()}
-              style={{
-                background: loading || !ytUrl.trim() ? "#1a1a1a" : "#14b8a6",
-                color: loading || !ytUrl.trim() ? "#444" : "#fff",
-                border: "1px solid",
-                borderColor: loading || !ytUrl.trim() ? "#2a2a2a" : "#14b8a6",
-                borderRadius: "10px",
-                padding: "13px",
-                fontSize: "14px",
-                fontWeight: 600,
-                cursor: loading || !ytUrl.trim() ? "not-allowed" : "pointer",
-                fontFamily: "Inter, sans-serif",
-                transition: "all 0.2s",
-                letterSpacing: "0.3px",
-                marginTop: "8px",
-              }}
-            >
-              {loading ? "⏳ Building Roadmap..." : "⚡ Generate Study Path"}
-            </button>
-          </>
-        ) : (
-          <>
-            <label
-              style={{
-                color: "#888",
-                fontSize: "11px",
-                letterSpacing: "1px",
-                textTransform: "uppercase",
-              }}
-            >
-              Quick-Add Templates
-            </label>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "14px",
-                overflowY: "auto",
-                flex: 1,
-              }}
-            >
-              {(Object.entries(CATEGORY_LABELS) as [string, string][]).map(([catKey, catLabel]) => (
-                <div key={catKey}>
-                  <p
-                    style={{
-                      color: "#555",
-                      fontSize: "10px",
-                      letterSpacing: "1px",
-                      textTransform: "uppercase",
-                      margin: "0 0 6px",
-                    }}
-                  >
-                    {catLabel}
-                  </p>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "6px",
-                    }}
-                  >
-                    {NODE_TEMPLATES.filter((t: NodeTemplate) => t.category === catKey).map(
-                      (tpl: NodeTemplate) => (
-                        <button
-                          key={tpl.id}
-                          onClick={() => openTemplatePreview(tpl)}
-                          style={{
-                            background: "#161616",
-                            border: "1px solid #2a2a2a",
-                            borderRadius: "8px",
-                            padding: "10px 12px",
-                            textAlign: "left",
-                            cursor: "pointer",
-                            fontFamily: "Inter, sans-serif",
-                            transition: "border-color 0.2s",
-                          }}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.borderColor = "#2d5a3f")
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.borderColor = "#2a2a2a")
-                          }
-                        >
-                          <p
-                            style={{
-                              margin: 0,
-                              color: "#e5e5e5",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {tpl.label}
-                          </p>
-                          <p
-                            style={{
-                              margin: "4px 0 0",
-                              color: "#666",
-                              fontSize: "11px",
-                            }}
-                          >
-                            {tpl.note}
-                          </p>
-                        </button>
-                      ),
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Status Messages */}
-      {error && (
+        {/* Main Form Area */}
         <div
-          style={{
-            background: "#2a1515",
-            border: "1px solid #ef444440",
-            borderRadius: "8px",
-            padding: "10px 12px",
-            color: "#ef4444",
-            fontSize: "12px",
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div
-          style={{
-            background: "#0f2a1a",
-            border: "1px solid #2d5a3f",
-            borderRadius: "8px",
-            padding: "10px 12px",
-            color: "#4ade80",
-            fontSize: "12px",
-          }}
-        >
-          ✓ Canvas synced perfectly!
-        </div>
-      )}
-
-      {/* Quadrant Legend */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <p
-          style={{
-            color: "#444",
-            fontSize: "10px",
-            letterSpacing: "1px",
-            textTransform: "uppercase",
-            margin: 0,
-          }}
-        >
-          Quadrants
-        </p>
-        {[
-          {
-            color: "#ef4444",
-            label: "Do Now",
-            desc: "Urgent + Important",
-            tip: "Important AND time-critical. There are consequences if it slips — do it today (e.g. exam tomorrow).",
-          },
-          {
-            color: "#14b8a6",
-            label: "Schedule",
-            desc: "Important, not urgent",
-            tip: "Matters for your goals but has no deadline pressure yet. Plan a time so it doesn't get ignored (e.g. build your portfolio).",
-          },
-          {
-            color: "#f59e0b",
-            label: "Delegate",
-            desc: "Urgent, not important",
-            tip: "Time-sensitive but low-value to you. Hand it off or knock it out fast — don't let it eat your important work (e.g. routine email).",
-          },
-          {
-            color: "#6b7280",
-            label: "Drop",
-            desc: "Neither",
-            tip: "Neither urgent nor important. Distractions and time-wasters — let them go (e.g. doomscrolling).",
-          },
-        ].map((q) => (
-          <div
-            key={q.label}
-            title={q.tip}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              cursor: "help",
-            }}
-          >
-            <div
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "2px",
-                background: q.color,
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ color: "#666", fontSize: "11px" }}>
-              <span style={{ color: "#999" }}>{q.label}</span> — {q.desc}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <button
-        onClick={onClear}
-        style={{
-          background: "rgba(239, 68, 68, 0.08)",
-          color: "#f87171",
-          border: "1px solid #ef444455",
-          borderRadius: "8px",
-          padding: "9px",
-          fontSize: "12px",
-          fontWeight: 600,
-          cursor: "pointer",
-          fontFamily: "Inter, sans-serif",
-        }}
-      >
-        Clear Canvas
-      </button>
-
-      {/* Account */}
-      <div
-        style={{
-          borderTop: "1px solid #1f1f1f",
-          paddingTop: "12px",
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-        }}
-      >
-        <Link
-          href="/account"
-          title="View account"
           style={{
             display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            flex: 1,
-            minWidth: 0,
-            textDecoration: "none",
-          }}
-        >
-          <div
-            style={{
-              width: "28px",
-              height: "28px",
-              borderRadius: "50%",
-              background: "#2d5a3f",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "12px",
-              fontWeight: 600,
-              flexShrink: 0,
-            }}
-          >
-            {(session?.user?.name || session?.user?.email || "?")
-              .charAt(0)
-              .toUpperCase()}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p
-              style={{
-                color: "#aaa",
-                fontSize: "12px",
-                margin: 0,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {session?.user?.name || session?.user?.email || "Guest"}
-            </p>
-            <p style={{ color: "#555", fontSize: "10px", margin: 0 }}>
-              View account →
-            </p>
-          </div>
-        </Link>
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          style={{
-            background: "transparent",
-            color: "#888",
-            border: "1px solid #2a2a2a",
-            borderRadius: "8px",
-            padding: "6px 10px",
-            fontSize: "11px",
-            cursor: "pointer",
-            fontFamily: "Inter, sans-serif",
+            flexDirection: "column",
+            gap: "12px",
             flexShrink: 0,
           }}
         >
-          Sign out
+          {activeTab === "dump" ? (
+            <>
+              <label
+                style={{
+                  color: "#888",
+                  fontSize: "11px",
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                }}
+              >
+                What's on your mind?
+              </label>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.ctrlKey) handleBrainDumpSubmit();
+                }}
+                placeholder="Study for DBMS exam tomorrow, finish portfolio, stop scrolling Instagram, reply to prof email..."
+                style={{
+                  background: "#161616",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: "10px",
+                  color: "#e5e5e5",
+                  padding: "14px",
+                  fontSize: "13px",
+                  resize: "none",
+                  height: "220px",
+                  fontFamily: "Inter, sans-serif",
+                  lineHeight: "1.6",
+                  outline: "none",
+                  transition: "border-color 0.2s",
+                }}
+                onFocus={(e) => (e.target.style.borderColor = "#2d5a3f")}
+                onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
+              />
+              <p
+                style={{
+                  color: "#444",
+                  fontSize: "11px",
+                  margin: 0,
+                  textAlign: "right",
+                }}
+              >
+                {text.length} chars · Ctrl+Enter to submit
+              </p>
+
+              <button
+                onClick={handleBrainDumpSubmit}
+                disabled={loading || !text.trim()}
+                style={{
+                  background: loading || !text.trim() ? "#1a1a1a" : "#2d5a3f",
+                  color: loading || !text.trim() ? "#444" : "#fff",
+                  border: "1px solid",
+                  borderColor: loading || !text.trim() ? "#2a2a2a" : "#2d5a3f",
+                  borderRadius: "10px",
+                  padding: "13px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: loading || !text.trim() ? "not-allowed" : "pointer",
+                  fontFamily: "Inter, sans-serif",
+                  transition: "all 0.2s",
+                  letterSpacing: "0.3px",
+                }}
+              >
+                {loading ? "⏳ Organizing..." : "→ Organize My Thoughts"}
+              </button>
+            </>
+          ) : activeTab === "youtube" ? (
+            <>
+              <label
+                style={{
+                  color: "#888",
+                  fontSize: "11px",
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                }}
+              >
+                YouTube Video URL
+              </label>
+              <input
+                type="text"
+                value={ytUrl}
+                onChange={(e) => setYtUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleYoutubeSubmit();
+                }}
+                placeholder="https://www.youtube.com/watch?v=..."
+                style={{
+                  background: "#161616",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: "10px",
+                  color: "#e5e5e5",
+                  padding: "14px",
+                  fontSize: "13px",
+                  fontFamily: "Inter, sans-serif",
+                  outline: "none",
+                  transition: "border-color 0.2s",
+                }}
+                onFocus={(e) => (e.target.style.borderColor = "#2d5a3f")}
+                onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
+              />
+              <p
+                style={{
+                  color: "#555",
+                  fontSize: "11px",
+                  margin: 0,
+                  lineHeight: "1.4",
+                }}
+              >
+                Paste any tutorial URL. AI will break it down into a linear
+                learning milestone chain inside your Schedule quadrant.
+              </p>
+
+              <button
+                onClick={handleYoutubeSubmit}
+                disabled={loading || !ytUrl.trim()}
+                style={{
+                  background: loading || !ytUrl.trim() ? "#1a1a1a" : "#14b8a6",
+                  color: loading || !ytUrl.trim() ? "#444" : "#fff",
+                  border: "1px solid",
+                  borderColor:
+                    loading || !ytUrl.trim() ? "#2a2a2a" : "#14b8a6",
+                  borderRadius: "10px",
+                  padding: "13px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: loading || !ytUrl.trim() ? "not-allowed" : "pointer",
+                  fontFamily: "Inter, sans-serif",
+                  transition: "all 0.2s",
+                  letterSpacing: "0.3px",
+                  marginTop: "8px",
+                }}
+              >
+                {loading ? "⏳ Building Roadmap..." : "⚡ Generate Study Path"}
+              </button>
+            </>
+          ) : (
+            <>
+              <label
+                style={{
+                  color: "#888",
+                  fontSize: "11px",
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                }}
+              >
+                Quick-Add Templates
+              </label>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "14px",
+                }}
+              >
+                {(Object.entries(CATEGORY_LABELS) as [string, string][]).map(
+                  ([catKey, catLabel]) => (
+                    <div key={catKey}>
+                      <p
+                        style={{
+                          color: "#555",
+                          fontSize: "10px",
+                          letterSpacing: "1px",
+                          textTransform: "uppercase",
+                          margin: "0 0 6px",
+                        }}
+                      >
+                        {catLabel}
+                      </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "6px",
+                        }}
+                      >
+                        {NODE_TEMPLATES.filter(
+                          (t: NodeTemplate) => t.category === catKey,
+                        ).map((tpl: NodeTemplate) => (
+                          <button
+                            key={tpl.id}
+                            onClick={() => openTemplatePreview(tpl)}
+                            style={{
+                              background: "#161616",
+                              border: "1px solid #2a2a2a",
+                              borderRadius: "8px",
+                              padding: "10px 12px",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              fontFamily: "Inter, sans-serif",
+                              transition: "border-color 0.2s",
+                            }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.borderColor = "#2d5a3f")
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.borderColor = "#2a2a2a")
+                            }
+                          >
+                            <p
+                              style={{
+                                margin: 0,
+                                color: "#e5e5e5",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {tpl.label}
+                            </p>
+                            <p
+                              style={{
+                                margin: "4px 0 0",
+                                color: "#666",
+                                fontSize: "11px",
+                              }}
+                            >
+                              {tpl.note}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Status Messages */}
+        {error && (
+          <div
+            style={{
+              background: "#2a1515",
+              border: "1px solid #ef444440",
+              borderRadius: "8px",
+              padding: "10px 12px",
+              color: "#ef4444",
+              fontSize: "12px",
+              flexShrink: 0,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {success && (
+          <div
+            style={{
+              background: "#0f2a1a",
+              border: "1px solid #2d5a3f",
+              borderRadius: "8px",
+              padding: "10px 12px",
+              color: "#4ade80",
+              fontSize: "12px",
+              flexShrink: 0,
+            }}
+          >
+            ✓ Canvas synced perfectly!
+          </div>
+        )}
+
+        {/* Quadrant Legend */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            flexShrink: 0,
+          }}
+        >
+          <p
+            style={{
+              color: "#444",
+              fontSize: "10px",
+              letterSpacing: "1px",
+              textTransform: "uppercase",
+              margin: 0,
+            }}
+          >
+            Quadrants
+          </p>
+          {[
+            {
+              color: "#ef4444",
+              label: "Do Now",
+              desc: "Urgent + Important",
+              tip: "Important AND time-critical. There are consequences if it slips — do it today (e.g. exam tomorrow).",
+            },
+            {
+              color: "#14b8a6",
+              label: "Schedule",
+              desc: "Important, not urgent",
+              tip: "Matters for your goals but has no deadline pressure yet. Plan a time so it doesn't get ignored (e.g. build your portfolio).",
+            },
+            {
+              color: "#f59e0b",
+              label: "Delegate",
+              desc: "Urgent, not important",
+              tip: "Time-sensitive but low-value to you. Hand it off or knock it out fast — don't let it eat your important work (e.g. routine email).",
+            },
+            {
+              color: "#6b7280",
+              label: "Drop",
+              desc: "Neither",
+              tip: "Neither urgent nor important. Distractions and time-wasters — let them go (e.g. doomscrolling).",
+            },
+          ].map((q) => (
+            <div
+              key={q.label}
+              title={q.tip}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                cursor: "help",
+              }}
+            >
+              <div
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "2px",
+                  background: q.color,
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ color: "#666", fontSize: "11px" }}>
+                <span style={{ color: "#999" }}>{q.label}</span> — {q.desc}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Fixed bottom section: Clear Canvas + Account */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+          flexShrink: 0,
+        }}
+      >
+        <button
+          onClick={onClear}
+          style={{
+            background: "rgba(239, 68, 68, 0.08)",
+            color: "#f87171",
+            border: "1px solid #ef444455",
+            borderRadius: "8px",
+            padding: "9px",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "Inter, sans-serif",
+          }}
+        >
+          Clear Canvas
         </button>
+
+        {/* Account */}
+        <div
+          style={{
+            borderTop: "1px solid #1f1f1f",
+            paddingTop: "12px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+          }}
+        >
+          <Link
+            href="/account"
+            title="View account"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              flex: 1,
+              minWidth: 0,
+              textDecoration: "none",
+            }}
+          >
+            <div
+              style={{
+                width: "28px",
+                height: "28px",
+                borderRadius: "50%",
+                background: "#2d5a3f",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              {(session?.user?.name || session?.user?.email || "?")
+                .charAt(0)
+                .toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p
+                style={{
+                  color: "#aaa",
+                  fontSize: "12px",
+                  margin: 0,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {session?.user?.name || session?.user?.email || "Guest"}
+              </p>
+              <p style={{ color: "#555", fontSize: "10px", margin: 0 }}>
+                View account →
+              </p>
+            </div>
+          </Link>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            style={{
+              background: "transparent",
+              color: "#888",
+              border: "1px solid #2a2a2a",
+              borderRadius: "8px",
+              padding: "6px 10px",
+              fontSize: "11px",
+              cursor: "pointer",
+              fontFamily: "Inter, sans-serif",
+              flexShrink: 0,
+            }}
+          >
+            Sign out
+          </button>
+        </div>
       </div>
 
       {/* Template Preview / Edit Modal */}
