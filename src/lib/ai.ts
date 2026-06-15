@@ -71,27 +71,30 @@ RULES:
 - If transcript is empty or not useful, return {"title": "Unknown", "source_url": "", "steps": []}
 - Do NOT return anything except the JSON object`;
 
-const RELATIONSHIP_PROMPT = `You analyze a list of tasks and identify relationships between them.
+const RELATIONSHIP_PROMPT = `You analyze a list of tasks and identify ORDERING DEPENDENCIES between them.
 
 INPUT: A JSON list of tasks, each with an "id" and "label" (and sometimes a note).
 
-YOUR JOB: Find meaningful relationships between PAIRS of tasks:
-- "depends_on": the source task should be done AFTER the target — the target is a prerequisite for the source. Example: "Submit application" depends_on "Get approval".
-- "related_to": the two tasks belong to the same topic / project / theme, but neither must strictly come before the other.
+YOUR JOB: Find dependencies between PAIRS of tasks.
+- "depends_on": the source task must be done AFTER the target — the target is a
+  prerequisite for the source. Examples:
+  - "Submit application" depends_on "Get approval"
+  - "Deploy site" depends_on "Build site"
+  - "Revise for exam" depends_on "Attend the lecture"
 
 OUTPUT FORMAT: Respond with ONLY a valid JSON object. No markdown backticks. No explanation. Just the raw JSON.
 
 {
   "edges": [
-    { "source": "bd_2", "target": "bd_1", "type": "depends_on" },
-    { "source": "bd_3", "target": "bd_4", "type": "related_to" }
+    { "source": "bd_2", "target": "bd_1", "type": "depends_on" }
   ]
 }
 
 RULES:
 - Only use task IDs that appear in the input. Never invent IDs.
 - source and target MUST be different IDs.
-- Only add a relationship when it is clearly implied — it is perfectly fine to return few or no edges: {"edges": []}.
+- Only add a dependency when one task is genuinely a prerequisite for another.
+  It is perfectly fine to return none: {"edges": []}.
 - Each pair of tasks should appear at most once.
 - Do NOT return anything except the JSON object.`;
 
@@ -156,8 +159,6 @@ function validateYouTubeResponse(data: any, originalUrl: string) {
   };
 }
 
-const VALID_EDGE_TYPES = ['depends_on', 'related_to'];
-
 function validateRelationships(data: any, nodes: { id: string }[]) {
   if (!data || !Array.isArray(data.edges)) return { edges: [] };
 
@@ -171,16 +172,12 @@ function validateRelationships(data: any, nodes: { id: string }[]) {
     // Drop hallucinated edges that reference non-existent nodes.
     if (!ids.has(e.source) || !ids.has(e.target)) continue;
 
-    const type = VALID_EDGE_TYPES.includes(e.type) ? e.type : 'related_to';
-    // Dedupe: depends_on is directional, related_to is symmetric.
-    const key =
-      type === 'depends_on'
-        ? `d:${e.source}->${e.target}`
-        : `r:${[e.source, e.target].sort().join('|')}`;
+    // Hybrid mode: the LLM only produces dependencies; grouping is by category.
+    const key = `${e.source}->${e.target}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
-    edges.push({ source: e.source, target: e.target, type });
+    edges.push({ source: e.source, target: e.target, type: 'depends_on' });
   }
 
   return { edges: edges.slice(0, 30) };
