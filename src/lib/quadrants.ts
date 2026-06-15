@@ -55,11 +55,16 @@ const SET_PALETTE = [
   "#fbbf24", "#fb923c", "#60a5fa", "#f87171",
 ];
 
-// Groups tasks into disjoint sets: any tasks connected directly or transitively
-// (by any relationship) land in the same set. Singletons get no color.
-export function computeDisjointSets(nodeIds: string[], edges: Relationship[]) {
+// Groups tasks into disjoint sets (Union-Find). Two things merge tasks:
+//   1. a shared category (deterministic, from the classifier) — the base grouping
+//   2. explicit edges (LLM dependencies + manual links)
+// Tasks that end up alone get no color.
+export function computeGroups(
+  nodes: { id: string; category?: string | null }[],
+  edges: Relationship[],
+) {
   const parent: Record<string, string> = {};
-  nodeIds.forEach((id) => (parent[id] = id));
+  nodes.forEach((n) => (parent[n.id] = n.id));
 
   function find(x: string): string {
     while (parent[x] !== x) {
@@ -69,21 +74,29 @@ export function computeDisjointSets(nodeIds: string[], edges: Relationship[]) {
     return x;
   }
   function union(a: string, b: string) {
+    if (parent[a] === undefined || parent[b] === undefined) return;
     const ra = find(a);
     const rb = find(b);
     if (ra !== rb) parent[ra] = rb;
   }
 
-  edges.forEach((e) => {
-    if (parent[e.source] !== undefined && parent[e.target] !== undefined) {
-      union(e.source, e.target);
-    }
+  // 1. merge tasks that share a category
+  const byCategory: Record<string, string[]> = {};
+  nodes.forEach((n) => {
+    const cat = (n.category || "").trim().toLowerCase();
+    if (cat) (byCategory[cat] ||= []).push(n.id);
+  });
+  Object.values(byCategory).forEach((ids) => {
+    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
   });
 
+  // 2. merge tasks linked by an edge (dependency or manual)
+  edges.forEach((e) => union(e.source, e.target));
+
   const groups: Record<string, string[]> = {};
-  nodeIds.forEach((id) => {
-    const root = find(id);
-    (groups[root] ||= []).push(id);
+  nodes.forEach((n) => {
+    const root = find(n.id);
+    (groups[root] ||= []).push(n.id);
   });
 
   const setColorOf: Record<string, string> = {};

@@ -14,7 +14,7 @@ import TaskNode from "./TaskNode";
 import SkeletonNode from "./SkeletonNode";
 import Sidebar from "./Sidebar";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { getNodePosition, computeDisjointSets } from "@/lib/quadrants";
+import { getNodePosition, computeGroups } from "@/lib/quadrants";
 import { saveCanvasState, loadCanvasState, clearCanvasState } from "@/lib/storage";
 import { ClusterContext } from "./ClusterContext";
 
@@ -167,10 +167,10 @@ export default function Canvas() {
     const rels = edges.map((e) => ({
       source: e.source,
       target: e.target,
-      type: (e.data as any)?.relType || "related_to",
+      type: (e.data as any)?.relType || "manual",
     }));
-    const { setColorOf, setIdOf } = computeDisjointSets(
-      real.map((n) => n.id),
+    const { setColorOf, setIdOf } = computeGroups(
+      real.map((n) => ({ id: n.id, category: n.data?.category ?? null })),
       rels,
     );
     return { setColorOf, setIdOf };
@@ -224,10 +224,16 @@ export default function Canvas() {
       if (!data.edges?.length) return;
 
       setEdges((prev) => {
-        const seen = new Set(prev.map((e) => `${e.source}->${e.target}`));
-        const fresh = data.edges.filter(
-          (e: any) => !seen.has(`${e.source}->${e.target}`),
-        );
+        // Dedupe by node PAIR (either direction, any type) so a re-link never
+        // draws a second edge between two tasks that are already connected.
+        const pairKey = (a: string, b: string) => [a, b].sort().join("|");
+        const seen = new Set(prev.map((e) => pairKey(e.source, e.target)));
+        const fresh = data.edges.filter((e: any) => {
+          const k = pairKey(e.source, e.target);
+          if (seen.has(k)) return false;
+          seen.add(k); // also dedupe within this batch
+          return true;
+        });
         return [...prev, ...fresh];
       });
     } catch (err) {
@@ -263,6 +269,7 @@ export default function Canvas() {
             label: node.label,
             note: node.note,
             quadrant: node.quadrant,
+            category: node.category ?? null,
           },
         };
       });
