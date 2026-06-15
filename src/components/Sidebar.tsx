@@ -91,6 +91,7 @@ export default function Sidebar({
 
       if (data.steps && data.steps.length > 0) {
         const batchId = Date.now();
+
         const mappedNodes = data.steps.map((step: any, index: number) => ({
           id: `yt_${batchId}_${index}`,
           label: step.label,
@@ -99,7 +100,15 @@ export default function Sidebar({
           order: step.order || index + 1,
         }));
 
-        const mappedEdges = createYouTubeEdges(mappedNodes);
+        // FIX: createYouTubeEdges generates deterministic IDs based on node IDs
+        // (e.g. e_yt_1_yt_2). If called more than once, those IDs collide in
+        // React Flow and cause the duplicate-key warnings. Salt every edge ID
+        // with the batchId so each submission produces globally unique IDs.
+        const rawEdges = createYouTubeEdges(mappedNodes);
+        const mappedEdges = rawEdges.map((edge: any) => ({
+          ...edge,
+          id: `${edge.id}_${batchId}`,
+        }));
 
         onNodesReceived(mappedNodes);
         if (onEdgesReceived) {
@@ -488,8 +497,7 @@ export default function Sidebar({
                   background: loading || !ytUrl.trim() ? "#1a1a1a" : "#14b8a6",
                   color: loading || !ytUrl.trim() ? "#444" : "#fff",
                   border: "1px solid",
-                  borderColor:
-                    loading || !ytUrl.trim() ? "#2a2a2a" : "#14b8a6",
+                  borderColor: loading || !ytUrl.trim() ? "#2a2a2a" : "#14b8a6",
                   borderRadius: "10px",
                   padding: "13px",
                   fontSize: "14px",
@@ -878,9 +886,7 @@ export default function Sidebar({
               }}
             />
 
-            <label style={{ color: "#888", fontSize: "11px" }}>
-              Quadrant
-            </label>
+            <label style={{ color: "#888", fontSize: "11px" }}>Quadrant</label>
             <select
               value={previewQuadrant}
               onChange={(e) => setPreviewQuadrant(e.target.value)}
@@ -896,12 +902,8 @@ export default function Sidebar({
               }}
             >
               <option value="do_now">Do Now — Urgent + Important</option>
-              <option value="schedule">
-                Schedule — Important, not urgent
-              </option>
-              <option value="delegate">
-                Delegate — Urgent, not important
-              </option>
+              <option value="schedule">Schedule — Important, not urgent</option>
+              <option value="delegate">Delegate — Urgent, not important</option>
               <option value="drop">Drop — Neither</option>
             </select>
 
