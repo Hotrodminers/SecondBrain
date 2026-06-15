@@ -13,6 +13,9 @@ export async function sendOtpEmail(to: string, otp: string) {
     from: `"Second Brain" <${process.env.SMTP_USER || "second2brains@gmail.com"}>`,
     to,
     subject: "Verify your Email - Second Brain",
+    // A plain-text part alongside the HTML improves deliverability (HTML-only
+    // messages are more likely to be flagged as spam).
+    text: `Your Second Brain verification code is ${otp}. It is valid for 10 minutes. If you did not request this, you can ignore this email.`,
     html: `
       <div style="font-family: Arial, sans-serif; background-color: #0a0a0a; color: #e5e5e5; padding: 40px 20px; border-radius: 12px; max-width: 500px; margin: 0 auto; border: 1px solid #2a2a2a;">
         <div style="text-align: center; margin-bottom: 30px;">
