@@ -13,12 +13,14 @@ import "reactflow/dist/style.css";
 import TaskNode from "./TaskNode";
 import SkeletonNode from "./SkeletonNode";
 import Sidebar from "./Sidebar";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import {
   saveCanvasState,
   loadCanvasState,
   clearCanvasState,
 } from "@/lib/storage";
+import { computeGroups } from "@/lib/quadrants";
+import { ClusterContext } from "./ClusterContext";
 
 // Defined OUTSIDE component — prevents React Flow nodeTypes/edgeTypes warning
 const nodeTypes = { taskNode: TaskNode, skeletonNode: SkeletonNode };
@@ -31,30 +33,10 @@ const quadrantPositions: Record<string, { x: number; y: number }> = {
 };
 
 const skeletonNodes = [
-  {
-    id: "skeleton-1",
-    type: "skeletonNode",
-    position: { x: 250, y: 200 },
-    data: {},
-  },
-  {
-    id: "skeleton-2",
-    type: "skeletonNode",
-    position: { x: 950, y: 200 },
-    data: {},
-  },
-  {
-    id: "skeleton-3",
-    type: "skeletonNode",
-    position: { x: 250, y: 650 },
-    data: {},
-  },
-  {
-    id: "skeleton-4",
-    type: "skeletonNode",
-    position: { x: 950, y: 650 },
-    data: {},
-  },
+  { id: "skeleton-1", type: "skeletonNode", position: { x: 250, y: 200 }, data: {} },
+  { id: "skeleton-2", type: "skeletonNode", position: { x: 950, y: 200 }, data: {} },
+  { id: "skeleton-3", type: "skeletonNode", position: { x: 250, y: 650 }, data: {} },
+  { id: "skeleton-4", type: "skeletonNode", position: { x: 950, y: 650 }, data: {} },
 ];
 
 const initialDemoNodes = [
@@ -162,16 +144,36 @@ export default function Canvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [showSkeleton, setShowSkeleton] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   // Ref-based seen-set: synchronous guard against duplicate edge IDs.
-  // Unlike setEdges(prev => ...), this is updated immediately so rapid-fire
-  // calls both see the same set and can't slip the same edge through twice.
   const seenEdgeIds = useRef<Set<string>>(new Set());
+
+  // Live reference to the latest nodes for async relationship refreshes.
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  // Disjoint-set grouping computed live from category + edges, shared via
+  // context so TaskNodes recolor on any change.
+  const cluster = useMemo(() => {
+    const real = nodes.filter((n) => n.type !== "skeletonNode");
+    const rels = edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      type: (e.data as any)?.relType || "manual",
+    }));
+    const { setColorOf, setIdOf } = computeGroups(
+      real.map((n) => ({ id: n.id, category: n.data?.category ?? null })),
+      rels,
+    );
+    return { setColorOf, setIdOf };
+  }, [nodes, edges]);
 
   // Load from storage on mount
   useEffect(() => {
     try {
-      // Migrate: wipe old split-key entries that caused the duplicate-key bug
       const hadOldNodes = localStorage.getItem("second-brain-nodes");
       const hadOldEdges = localStorage.getItem("second-brain-edges");
       if (hadOldNodes || hadOldEdges) {
@@ -216,7 +218,7 @@ export default function Canvas() {
     }
   }, [showSkeleton, setNodes]);
 
-  // FIX: onConnect — lets users draw edges between nodes by dragging from a handle
+  // Manual linking — drag from a node handle to another node.
   const onConnect = useCallback(
     (connection: Connection) => {
       const edgeId = `manual-${connection.source}-${connection.target}-${Date.now()}`;
@@ -229,7 +231,8 @@ export default function Canvas() {
             ...connection,
             id: edgeId,
             animated: false,
-            style: { stroke: "#14b8a6", strokeWidth: 2 },
+            data: { relType: "manual" },
+            style: { stroke: "#9ca3af", strokeWidth: 2 },
           },
           prev,
         ),
@@ -238,9 +241,49 @@ export default function Canvas() {
     [setEdges],
   );
 
-  const handleNodesReceived = (newNodes: any[]) => {
-    setNodes((prev) => {
-      const cleanedPrev = prev.filter((n) => n.type !== "skeletonNode");
+  // Re-link the WHOLE board: send every current task node to the relationship
+  // engine and merge in new dependency edges (deduped by node pair + id).
+  const refreshRelationships = useCallback(async () => {
+    const real = nodesRef.current.filter((n) => n.type !== "skeletonNode");
+    if (real.length < 2) return;
+
+    const payload = real.map((n) => ({
+      id: n.id,
+      label: n.data?.label,
+      note: n.data?.note ?? null,
+    }));
+
+    try {
+      const res = await fetch("/api/relationships", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes: payload }),
+      });
+      const data = await res.json();
+      if (!data.edges?.length) return;
+
+      setEdges((prev) => {
+        const pairKey = (a: string, b: string) => [a, b].sort().join("|");
+        const seenPairs = new Set(prev.map((e) => pairKey(e.source, e.target)));
+        const fresh = data.edges.filter((e: any) => {
+          const k = pairKey(e.source, e.target);
+          if (seenPairs.has(k) || seenEdgeIds.current.has(e.id)) return false;
+          seenPairs.add(k);
+          seenEdgeIds.current.add(e.id);
+          return true;
+        });
+        return fresh.length > 0 ? [...prev, ...fresh] : prev;
+      });
+    } catch (err) {
+      console.error("[relationships] refresh failed:", err);
+    }
+  }, [setEdges]);
+
+  const handleNodesReceived = useCallback(
+    (newNodes: any[], options?: { linkAll?: boolean }) => {
+      const cleanedPrev = nodesRef.current.filter(
+        (n) => n.type !== "skeletonNode",
+      );
 
       const quadrantCount: Record<string, number> = {
         do_now: 0,
@@ -268,13 +311,24 @@ export default function Canvas() {
             x: base.x + (count % 2) * 280,
             y: base.y + Math.floor(count / 2) * 160,
           },
-          data: { label: node.label, note: node.note, quadrant: node.quadrant },
+          data: {
+            label: node.label,
+            note: node.note,
+            quadrant: node.quadrant,
+            category: node.category ?? null,
+          },
         };
       });
 
-      return [...cleanedPrev, ...positioned];
-    });
-  };
+      const merged = [...cleanedPrev, ...positioned];
+      nodesRef.current = merged; // sync so refreshRelationships sees new nodes
+      setNodes(merged);
+
+      // After a brain dump, link new tasks against the whole board.
+      if (options?.linkAll) refreshRelationships();
+    },
+    [setNodes, refreshRelationships],
+  );
 
   const handleEdgesReceived = (newEdges: any[]) => {
     const uniqueNewEdges = newEdges.filter((edge) => {
@@ -286,7 +340,6 @@ export default function Canvas() {
     if (uniqueNewEdges.length === 0) return;
 
     setEdges((prev) => {
-      // Second defensive layer: also check against current state
       const existingIds = new Set(prev.map((e) => e.id));
       const deduped = uniqueNewEdges.filter((e) => !existingIds.has(e.id));
       return deduped.length > 0 ? [...prev, ...deduped] : prev;
@@ -297,8 +350,8 @@ export default function Canvas() {
     seenEdgeIds.current.clear();
     setNodes([]);
     setEdges([]);
+    nodesRef.current = [];
     clearCanvasState();
-    // Also nuke old split keys in case they survived migration
     localStorage.removeItem("second-brain-nodes");
     localStorage.removeItem("second-brain-edges");
   };
@@ -310,169 +363,174 @@ export default function Canvas() {
   };
 
   return (
-    <div
-      style={{
-        width: "100vw",
-        height: "100vh",
-        display: "flex",
-        background: "#0a0a0a",
-      }}
-    >
-      <Sidebar
-        onNodesReceived={handleNodesReceived}
-        onEdgesReceived={handleEdgesReceived}
-        onClear={handleClear}
-        onLoadingChange={setShowSkeleton}
-      />
-
+    <ClusterContext.Provider value={cluster}>
       <div
         style={{
-          marginLeft: "320px",
-          flex: 1,
+          width: "100vw",
           height: "100vh",
-          position: "relative",
+          display: "flex",
+          background: "#0a0a0a",
         }}
       >
-        {/* Top bar */}
+        <Sidebar
+          onNodesReceived={handleNodesReceived}
+          onEdgesReceived={handleEdgesReceived}
+          onClear={handleClear}
+          onLoadingChange={setShowSkeleton}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((c) => !c)}
+        />
+
         <div
           style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: "48px",
-            background: "linear-gradient(180deg, #0a0a0a 0%, transparent 100%)",
-            zIndex: 5,
-            display: "flex",
-            alignItems: "center",
-            padding: "0 20px",
-            gap: "12px",
-            pointerEvents: "none",
+            marginLeft: collapsed ? "0px" : "320px",
+            transition: "margin-left 0.25s ease",
+            flex: 1,
+            height: "100vh",
+            position: "relative",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <div
-              style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                background: "#2d5a3f",
-                boxShadow: "0 0 8px #2d5a3f",
-              }}
-            />
-            <span
-              style={{
-                color: "#444",
-                fontSize: "11px",
-                letterSpacing: "2px",
-                textTransform: "uppercase",
-                fontFamily: "Inter, sans-serif",
-              }}
-            >
-              Visual Second Brain · Canvas
-            </span>
-          </div>
-
+          {/* Top bar */}
           <div
             style={{
-              marginLeft: "auto",
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: "48px",
+              background: "linear-gradient(180deg, #0a0a0a 0%, transparent 100%)",
+              zIndex: 5,
               display: "flex",
-              gap: "16px",
               alignItems: "center",
+              padding: "0 20px",
+              gap: "12px",
+              pointerEvents: "none",
             }}
           >
-            {["do_now", "schedule", "delegate", "drop"].map((q) => {
-              const colors: Record<string, string> = {
-                do_now: "#ef4444",
-                schedule: "#14b8a6",
-                delegate: "#f59e0b",
-                drop: "#6b7280",
-              };
-              const count = nodes.filter(
-                (n) => n.data?.quadrant === q && n.type !== "skeletonNode",
-              ).length;
-              return (
-                <div
-                  key={q}
-                  style={{ display: "flex", alignItems: "center", gap: "5px" }}
-                >
-                  <div
-                    style={{
-                      width: "6px",
-                      height: "6px",
-                      borderRadius: "2px",
-                      background: colors[q],
-                    }}
-                  />
-                  <span
-                    style={{
-                      color: "#555",
-                      fontSize: "11px",
-                      fontFamily: "Inter, sans-serif",
-                    }}
-                  >
-                    {count}
-                  </span>
-                </div>
-              );
-            })}
-            <span
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background: "#2d5a3f",
+                  boxShadow: "0 0 8px #2d5a3f",
+                }}
+              />
+              <span
+                style={{
+                  color: "#444",
+                  fontSize: "11px",
+                  letterSpacing: "2px",
+                  textTransform: "uppercase",
+                  fontFamily: "Inter, sans-serif",
+                }}
+              >
+                Visual Second Brain · Canvas
+              </span>
+            </div>
+
+            <div
               style={{
-                color: "#333",
-                fontSize: "11px",
-                fontFamily: "Inter, sans-serif",
+                marginLeft: "auto",
+                display: "flex",
+                gap: "16px",
+                alignItems: "center",
               }}
             >
-              {nodes.filter((n) => n.type !== "skeletonNode").length} total
-            </span>
+              {["do_now", "schedule", "delegate", "drop"].map((q) => {
+                const colors: Record<string, string> = {
+                  do_now: "#ef4444",
+                  schedule: "#14b8a6",
+                  delegate: "#f59e0b",
+                  drop: "#6b7280",
+                };
+                const count = nodes.filter(
+                  (n) => n.data?.quadrant === q && n.type !== "skeletonNode",
+                ).length;
+                return (
+                  <div
+                    key={q}
+                    style={{ display: "flex", alignItems: "center", gap: "5px" }}
+                  >
+                    <div
+                      style={{
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "2px",
+                        background: colors[q],
+                      }}
+                    />
+                    <span
+                      style={{
+                        color: "#555",
+                        fontSize: "11px",
+                        fontFamily: "Inter, sans-serif",
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+              <span
+                style={{
+                  color: "#333",
+                  fontSize: "11px",
+                  fontFamily: "Inter, sans-serif",
+                }}
+              >
+                {nodes.filter((n) => n.type !== "skeletonNode").length} total
+              </span>
+            </div>
           </div>
+
+          <QuadrantOverlay />
+
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onEdgeDoubleClick={handleEdgeDoubleClick}
+            nodeTypes={nodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.3 }}
+            style={{ background: "transparent" }}
+          >
+            <Background color="#1e1e1e" gap={32} size={1} />
+            <Controls
+              style={{
+                background: "#0f0f0f",
+                border: "1px solid #2a2a2a",
+                borderRadius: "10px",
+                boxShadow: "0 4px 16px #00000080",
+              }}
+            />
+            <MiniMap
+              style={{
+                width: 160,
+                height: 100,
+                background: "#0f0f0f",
+                border: "1px solid #2a2a2a",
+                borderRadius: "12px",
+                boxShadow: "0 4px 16px #00000080",
+              }}
+              maskColor="rgba(0,0,0,0.7)"
+              nodeColor={(n) => {
+                const q = n.data?.quadrant;
+                if (q === "do_now") return "#ef4444";
+                if (q === "schedule") return "#14b8a6";
+                if (q === "delegate") return "#f59e0b";
+                return "#6b7280";
+              }}
+              nodeStrokeWidth={3}
+              nodeBorderRadius={4}
+            />
+          </ReactFlow>
         </div>
-
-        <QuadrantOverlay />
-
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onEdgeDoubleClick={handleEdgeDoubleClick}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.3 }}
-          style={{ background: "transparent" }}
-        >
-          <Background color="#1e1e1e" gap={32} size={1} />
-          <Controls
-            style={{
-              background: "#0f0f0f",
-              border: "1px solid #2a2a2a",
-              borderRadius: "10px",
-              boxShadow: "0 4px 16px #00000080",
-            }}
-          />
-          <MiniMap
-            style={{
-              width: 160,
-              height: 100,
-              background: "#0f0f0f",
-              border: "1px solid #2a2a2a",
-              borderRadius: "12px",
-              boxShadow: "0 4px 16px #00000080",
-            }}
-            maskColor="rgba(0,0,0,0.7)"
-            nodeColor={(n) => {
-              const q = n.data?.quadrant;
-              if (q === "do_now") return "#ef4444";
-              if (q === "schedule") return "#14b8a6";
-              if (q === "delegate") return "#f59e0b";
-              return "#6b7280";
-            }}
-            nodeStrokeWidth={3}
-            nodeBorderRadius={4}
-          />
-        </ReactFlow>
       </div>
-    </div>
+    </ClusterContext.Provider>
   );
 }
