@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { sendOtpEmail } from "@/lib/mail";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -46,6 +47,25 @@ export async function POST(req: NextRequest) {
         passwordHash,
       },
     });
+
+    // Generate and save verification token
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await prisma.verificationToken.deleteMany({
+      where: { identifier: normalizedEmail },
+    });
+    await prisma.verificationToken.create({
+      data: {
+        identifier: normalizedEmail,
+        token: otp,
+        expires: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      },
+    });
+
+    try {
+      await sendOtpEmail(normalizedEmail, otp);
+    } catch (mailError) {
+      console.error("[register] Failed to send initial OTP email:", mailError);
+    }
 
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (error: any) {

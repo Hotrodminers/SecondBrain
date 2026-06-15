@@ -312,7 +312,7 @@ export default function Sidebar({
                 textTransform: "uppercase",
               }}
             >
-              What's on your mind?
+              What&apos;s on your mind?
             </label>
             <textarea
               value={text}

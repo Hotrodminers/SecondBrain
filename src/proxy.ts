@@ -2,24 +2,31 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/auth.config";
 
-// Build an edge-safe NextAuth instance (no Prisma/bcrypt) just for the
-// proxy's session check.
 const { auth } = NextAuth(authConfig);
 
-// Protect the canvas: unauthenticated users are redirected to /login.
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
-  const isOnCanvas = req.nextUrl.pathname.startsWith("/canvas");
+  const { pathname } = req.nextUrl;
 
-  if (isOnCanvas && !isLoggedIn) {
+  const isOnCanvas = pathname.startsWith("/canvas");
+  const isOnAccount = pathname.startsWith("/account");
+  const isOnVerify = pathname.startsWith("/verify-email");
+
+  // 1. If trying to access protected pages and not logged in, redirect to login
+  if ((isOnCanvas || isOnAccount) && !isLoggedIn) {
     const loginUrl = new URL("/login", req.nextUrl.origin);
-    loginUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
+    loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // 2. If trying to visit /verify-email and not logged in, redirect to login
+  if (isOnVerify && !isLoggedIn) {
+    return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
   }
 
   return NextResponse.next();
 });
 
 export const config = {
-  matcher: ["/canvas/:path*"],
+  matcher: ["/canvas/:path*", "/account/:path*", "/verify-email"],
 };

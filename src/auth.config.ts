@@ -11,12 +11,16 @@ export const authConfig = {
   session: { strategy: "jwt" },
   callbacks: {
     jwt({ token, user }) {
-      if (user) token.id = user.id;
+      if (user) {
+        token.id = user.id;
+        token.emailVerified = (user as any).emailVerified;
+      }
       return token;
     },
     session({ session, token }) {
-      if (session.user && token.sub) {
-        session.user.id = token.sub;
+      if (session.user) {
+        if (token.sub) session.user.id = token.sub;
+        session.user.emailVerified = token.emailVerified as any;
       }
       return session;
     },

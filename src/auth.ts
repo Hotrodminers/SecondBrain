@@ -28,7 +28,13 @@ const providers: NextAuthConfig["providers"] = [
       const valid = await bcrypt.compare(password, user.passwordHash);
       if (!valid) return null;
 
-      return { id: user.id, name: user.name, email: user.email, image: user.image };
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        emailVerified: user.emailVerified,
+      };
     },
   }),
 ];
@@ -56,6 +62,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
   callbacks: {
     ...authConfig.callbacks,
+    async jwt({ token, user, trigger, session }) {
+      console.log(`[NextAuth JWT] Trigger: "${trigger || "none"}", sub: "${token.sub || ""}", id: "${token.id || ""}"`);
+      if (user) {
+        token.id = user.id;
+        // Query the database to get the latest emailVerified status
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { emailVerified: true },
+        });
+        token.emailVerified = dbUser?.emailVerified ? dbUser.emailVerified.toISOString() : null;
+        console.log(`[NextAuth JWT] Sign-in verified status: ${token.emailVerified}`);
+      }
+      if (trigger === "update") {
+        const userId = token.id || token.sub;
+        console.log(`[NextAuth JWT] Update triggered for user ID: "${userId || ""}"`);
+        if (userId) {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: userId as string },
+            select: { emailVerified: true },
+          });
+          token.emailVerified = dbUser?.emailVerified ? dbUser.emailVerified.toISOString() : null;
+          console.log(`[NextAuth JWT] Updated verified status to: ${token.emailVerified}`);
+        }
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user && token.sub) {
+        session.user.id = token.sub;
+        session.user.emailVerified = token.emailVerified ? new Date(token.emailVerified as string) : null;
+      }
+      return session;
+    },
     // For OAuth sign-ins, ensure a User row exists (JWT strategy skips the
     // adapter, so we upsert manually to persist social accounts).
     async signIn({ user, account }) {
@@ -64,11 +103,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       await prisma.user.upsert({
         where: { email: user.email.toLowerCase() },
-        update: { name: user.name ?? undefined, image: user.image ?? undefined },
+        update: {
+          name: user.name ?? undefined,
+          image: user.image ?? undefined,
+          emailVerified: new Date(), // Pre-verified since it comes from OAuth provider
+        },
         create: {
           email: user.email.toLowerCase(),
           name: user.name,
           image: user.image,
+          emailVerified: new Date(), // Pre-verified since it comes from OAuth provider
         },
       });
       return true;
