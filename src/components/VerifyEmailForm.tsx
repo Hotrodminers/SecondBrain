@@ -85,6 +85,21 @@ export default function VerifyEmailForm({ email }: VerifyEmailFormProps) {
 
   return (
     <AuthShell title="Verify your email" subtitle={`We sent a 6-digit code to ${email}`}>
+      <div
+        style={{
+          background: "#1f1a0e",
+          border: "1px solid #f59e0b40",
+          borderRadius: "8px",
+          padding: "10px 12px",
+          color: "#fbbf24",
+          fontSize: "12.5px",
+          lineHeight: 1.5,
+        }}
+      >
+        📩 Can&apos;t find the email? Check your <strong>spam / junk</strong> folder
+        — and mark it &quot;Not spam&quot; so future codes land in your inbox.
+      </div>
+
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         <input
           type="text"

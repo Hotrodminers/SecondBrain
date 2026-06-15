@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import Link from "next/link";
 
 export const authInput: CSSProperties = {
   background: "#161616",
@@ -86,6 +87,20 @@ export default function AuthShell({
           gap: "20px",
         }}
       >
+        <Link
+          href="/"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            color: "#666",
+            fontSize: "13px",
+            textDecoration: "none",
+          }}
+        >
+          <span style={{ fontSize: "15px", lineHeight: 1 }}>←</span> Back to home
+        </Link>
+
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
