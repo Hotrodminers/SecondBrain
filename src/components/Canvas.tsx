@@ -4,21 +4,31 @@ import ReactFlow, {
   Background,
   Controls,
   MiniMap,
-  addEdge,
   useNodesState,
   useEdgesState,
-  type Connection,
+  addEdge,
+  Connection,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import TaskNode from "./TaskNode";
 import SkeletonNode from "./SkeletonNode";
 import Sidebar from "./Sidebar";
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { getNodePosition, computeGroups } from "@/lib/quadrants";
-import { saveCanvasState, loadCanvasState, clearCanvasState } from "@/lib/storage";
-import { ClusterContext } from "./ClusterContext";
+import { useEffect, useState, useRef, useCallback } from "react";
+import {
+  saveCanvasState,
+  loadCanvasState,
+  clearCanvasState,
+} from "@/lib/storage";
 
+// Defined OUTSIDE component — prevents React Flow nodeTypes/edgeTypes warning
 const nodeTypes = { taskNode: TaskNode, skeletonNode: SkeletonNode };
+
+const quadrantPositions: Record<string, { x: number; y: number }> = {
+  do_now: { x: 200, y: 150 },
+  schedule: { x: 900, y: 150 },
+  delegate: { x: 200, y: 600 },
+  drop: { x: 900, y: 600 },
+};
 
 const skeletonNodes = [
   {
@@ -132,14 +142,14 @@ const initialDemoNodes = [
 
 const initialDemoEdges = [
   {
-    id: "e-yt1-yt2",
+    id: "demo-edge-yt1-yt2",
     source: "yt-1",
     target: "yt-2",
     animated: true,
     style: { stroke: "#14b8a6", strokeWidth: 2 },
   },
   {
-    id: "e-yt2-yt3",
+    id: "demo-edge-yt2-yt3",
     source: "yt-2",
     target: "yt-3",
     animated: true,
@@ -152,49 +162,52 @@ export default function Canvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [showSkeleton, setShowSkeleton] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
 
-  // Keep a live reference to the latest nodes for async relationship refreshes.
-  const nodesRef = useRef(nodes);
+  // Ref-based seen-set: synchronous guard against duplicate edge IDs.
+  // Unlike setEdges(prev => ...), this is updated immediately so rapid-fire
+  // calls both see the same set and can't slip the same edge through twice.
+  const seenEdgeIds = useRef<Set<string>>(new Set());
+
+  // Load from storage on mount
   useEffect(() => {
-    nodesRef.current = nodes;
-  }, [nodes]);
+    try {
+      // Migrate: wipe old split-key entries that caused the duplicate-key bug
+      const hadOldNodes = localStorage.getItem("second-brain-nodes");
+      const hadOldEdges = localStorage.getItem("second-brain-edges");
+      if (hadOldNodes || hadOldEdges) {
+        localStorage.removeItem("second-brain-nodes");
+        localStorage.removeItem("second-brain-edges");
+      }
 
-  // Disjoint sets computed live over the whole board (all nodes + all edges,
-  // AI-made or hand-drawn). Shared via context so nodes recolor on any change.
-  const cluster = useMemo(() => {
-    const real = nodes.filter((n) => n.type !== "skeletonNode");
-    const rels = edges.map((e) => ({
-      source: e.source,
-      target: e.target,
-      type: (e.data as any)?.relType || "manual",
-    }));
-    const { setColorOf, setIdOf } = computeGroups(
-      real.map((n) => ({ id: n.id, category: n.data?.category ?? null })),
-      rels,
-    );
-    return { setColorOf, setIdOf };
-  }, [nodes, edges]);
+      const saved = loadCanvasState();
 
-  useEffect(() => {
-    const saved = loadCanvasState();
-    if (saved && saved.nodes.length > 0) {
-      setNodes(saved.nodes);
-      setEdges(saved.edges);
-    } else {
+      if (saved && saved.nodes.length > 0) {
+        setNodes(saved.nodes);
+        setEdges(saved.edges);
+        saved.edges.forEach((e: any) => seenEdgeIds.current.add(e.id));
+      } else {
+        setNodes(initialDemoNodes);
+        setEdges(initialDemoEdges);
+        initialDemoEdges.forEach((e) => seenEdgeIds.current.add(e.id));
+      }
+    } catch (e) {
+      console.error("Failed to load saved data", e);
       setNodes(initialDemoNodes);
       setEdges(initialDemoEdges);
+      initialDemoEdges.forEach((e) => seenEdgeIds.current.add(e.id));
+    } finally {
+      setIsLoaded(true);
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsLoaded(true);
   }, [setNodes, setEdges]);
 
+  // Persist to storage on every change
   useEffect(() => {
     if (!isLoaded) return;
     const realNodes = nodes.filter((n) => n.type !== "skeletonNode");
     saveCanvasState(realNodes, edges);
   }, [nodes, edges, isLoaded]);
 
+  // Add/remove skeleton nodes while AI is thinking
   useEffect(() => {
     if (showSkeleton) {
       setNodes((prev) => [...prev, ...skeletonNodes]);
@@ -203,60 +216,46 @@ export default function Canvas() {
     }
   }, [showSkeleton, setNodes]);
 
-  // Re-link the WHOLE board: send every current task node to the relationship
-  // engine and merge in any new edges (deduping by source→target).
-  const refreshRelationships = useCallback(async () => {
-    const real = nodesRef.current.filter((n) => n.type !== "skeletonNode");
-    if (real.length < 2) return;
+  // FIX: onConnect — lets users draw edges between nodes by dragging from a handle
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      const edgeId = `manual-${connection.source}-${connection.target}-${Date.now()}`;
+      if (seenEdgeIds.current.has(edgeId)) return;
+      seenEdgeIds.current.add(edgeId);
 
-    const payload = real.map((n) => ({
-      id: n.id,
-      label: n.data?.label,
-      note: n.data?.note ?? null,
-    }));
-
-    try {
-      const res = await fetch("/api/relationships", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes: payload }),
-      });
-      const data = await res.json();
-      if (!data.edges?.length) return;
-
-      setEdges((prev) => {
-        // Dedupe by node PAIR (either direction, any type) so a re-link never
-        // draws a second edge between two tasks that are already connected.
-        const pairKey = (a: string, b: string) => [a, b].sort().join("|");
-        const seen = new Set(prev.map((e) => pairKey(e.source, e.target)));
-        const fresh = data.edges.filter((e: any) => {
-          const k = pairKey(e.source, e.target);
-          if (seen.has(k)) return false;
-          seen.add(k); // also dedupe within this batch
-          return true;
-        });
-        return [...prev, ...fresh];
-      });
-    } catch (err) {
-      console.error("[relationships] refresh failed:", err);
-    }
-  }, [setEdges]);
-
-  const handleNodesReceived = useCallback(
-    (newNodes: any[], options?: { linkAll?: boolean }) => {
-      const cleanedPrev = nodesRef.current.filter(
-        (n) => n.type !== "skeletonNode",
+      setEdges((prev) =>
+        addEdge(
+          {
+            ...connection,
+            id: edgeId,
+            animated: false,
+            style: { stroke: "#14b8a6", strokeWidth: 2 },
+          },
+          prev,
+        ),
       );
+    },
+    [setEdges],
+  );
 
-      const quadrantCount: Record<string, number> = {};
+  const handleNodesReceived = (newNodes: any[]) => {
+    setNodes((prev) => {
+      const cleanedPrev = prev.filter((n) => n.type !== "skeletonNode");
+
+      const quadrantCount: Record<string, number> = {
+        do_now: 0,
+        schedule: 0,
+        delegate: 0,
+        drop: 0,
+      };
       cleanedPrev.forEach((n) => {
-        if (n.data?.quadrant) {
+        if (n.data?.quadrant)
           quadrantCount[n.data.quadrant] =
             (quadrantCount[n.data.quadrant] || 0) + 1;
-        }
       });
 
       const positioned = newNodes.map((node) => {
+        const base = quadrantPositions[node.quadrant] || { x: 400, y: 300 };
         const count = quadrantCount[node.quadrant] || 0;
         quadrantCount[node.quadrant] = count + 1;
 
@@ -265,55 +264,52 @@ export default function Canvas() {
             node.id ||
             `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           type: "taskNode",
-          position: getNodePosition(node.quadrant, count),
-          data: {
-            label: node.label,
-            note: node.note,
-            quadrant: node.quadrant,
-            category: node.category ?? null,
+          position: {
+            x: base.x + (count % 2) * 280,
+            y: base.y + Math.floor(count / 2) * 160,
           },
+          data: { label: node.label, note: node.note, quadrant: node.quadrant },
         };
       });
 
-      const merged = [...cleanedPrev, ...positioned];
-      nodesRef.current = merged; // sync so refreshRelationships sees new nodes
-      setNodes(merged);
+      return [...cleanedPrev, ...positioned];
+    });
+  };
 
-      // After a brain dump, re-link across everything on the board.
-      if (options?.linkAll) refreshRelationships();
-    },
-    [setNodes, refreshRelationships],
-  );
+  const handleEdgesReceived = (newEdges: any[]) => {
+    const uniqueNewEdges = newEdges.filter((edge) => {
+      if (seenEdgeIds.current.has(edge.id)) return false;
+      seenEdgeIds.current.add(edge.id);
+      return true;
+    });
 
-  // Manual linking: dragging between node handles creates an edge.
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...connection,
-            data: { relType: "manual" },
-            style: { stroke: "#9ca3af", strokeWidth: 2 },
-          },
-          eds,
-        ),
-      );
-    },
-    [setEdges],
-  );
+    if (uniqueNewEdges.length === 0) return;
 
-  const handleEdgesReceived = useCallback((newEdges: any[]) => {
-    setEdges((prev) => [...prev, ...newEdges]);
-  }, [setEdges]);
+    setEdges((prev) => {
+      // Second defensive layer: also check against current state
+      const existingIds = new Set(prev.map((e) => e.id));
+      const deduped = uniqueNewEdges.filter((e) => !existingIds.has(e.id));
+      return deduped.length > 0 ? [...prev, ...deduped] : prev;
+    });
+  };
 
-  const handleClear = useCallback(() => {
+  const handleClear = () => {
+    seenEdgeIds.current.clear();
     setNodes([]);
     setEdges([]);
     clearCanvasState();
-  }, [setNodes, setEdges]);
+    // Also nuke old split keys in case they survived migration
+    localStorage.removeItem("second-brain-nodes");
+    localStorage.removeItem("second-brain-edges");
+  };
+
+  const handleEdgeDoubleClick = (event: React.MouseEvent, edge: any) => {
+    event.stopPropagation();
+    seenEdgeIds.current.delete(edge.id);
+    setEdges((prevEdges) => prevEdges.filter((e) => e.id !== edge.id));
+  };
 
   return (
-    <ClusterContext.Provider value={cluster}>
     <div
       style={{
         width: "100vw",
@@ -327,19 +323,17 @@ export default function Canvas() {
         onEdgesReceived={handleEdgesReceived}
         onClear={handleClear}
         onLoadingChange={setShowSkeleton}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((c) => !c)}
       />
 
       <div
         style={{
-          marginLeft: collapsed ? "0px" : "320px",
-          transition: "margin-left 0.25s ease",
+          marginLeft: "320px",
           flex: 1,
           height: "100vh",
           position: "relative",
         }}
       >
+        {/* Top bar */}
         <div
           style={{
             position: "absolute",
@@ -442,6 +436,7 @@ export default function Canvas() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onEdgeDoubleClick={handleEdgeDoubleClick}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
@@ -457,9 +452,9 @@ export default function Canvas() {
             }}
           />
           <MiniMap
+            width={160}
+            height={100}
             style={{
-              width: 160,
-              height: 100,
               background: "#0f0f0f",
               border: "1px solid #2a2a2a",
               borderRadius: "12px",
@@ -479,6 +474,5 @@ export default function Canvas() {
         </ReactFlow>
       </div>
     </div>
-    </ClusterContext.Provider>
   );
 }
