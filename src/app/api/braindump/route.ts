@@ -10,14 +10,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ nodes: [] }, { status: 200 });
     }
 
+    // Groq classifies the dump into quadrants. Relationships are computed
+    // separately over the whole board via /api/relationships.
     const result = await classifyBrainDump(text.trim());
-    return NextResponse.json(result, { status: 200 });
 
+    // Give every node a globally-unique id so repeated dumps never collide.
+    const batchId = Date.now().toString(36);
+    const nodes = result.nodes.map((n: any, i: number) => ({
+      ...n,
+      id: `bd_${batchId}_${i}`,
+    }));
+
+    return NextResponse.json({ nodes }, { status: 200 });
   } catch (error) {
     console.error('[braindump route] Error:', error);
     return NextResponse.json(
       { error: 'Internal server error', nodes: [] },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

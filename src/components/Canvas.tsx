@@ -4,16 +4,19 @@ import ReactFlow, {
   Background,
   Controls,
   MiniMap,
+  addEdge,
   useNodesState,
   useEdgesState,
+  type Connection,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import TaskNode from "./TaskNode";
 import SkeletonNode from "./SkeletonNode";
 import Sidebar from "./Sidebar";
-import { useEffect, useState, useCallback } from "react";
-import { getNodePosition } from "@/lib/quadrants";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { getNodePosition, computeDisjointSets } from "@/lib/quadrants";
 import { saveCanvasState, loadCanvasState, clearCanvasState } from "@/lib/storage";
+import { ClusterContext } from "./ClusterContext";
 
 const nodeTypes = { taskNode: TaskNode, skeletonNode: SkeletonNode };
 
@@ -151,6 +154,28 @@ export default function Canvas() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
+  // Keep a live reference to the latest nodes for async relationship refreshes.
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  // Disjoint sets computed live over the whole board (all nodes + all edges,
+  // AI-made or hand-drawn). Shared via context so nodes recolor on any change.
+  const cluster = useMemo(() => {
+    const real = nodes.filter((n) => n.type !== "skeletonNode");
+    const rels = edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      type: (e.data as any)?.relType || "related_to",
+    }));
+    const { setColorOf, setIdOf } = computeDisjointSets(
+      real.map((n) => n.id),
+      rels,
+    );
+    return { setColorOf, setIdOf };
+  }, [nodes, edges]);
+
   useEffect(() => {
     const saved = loadCanvasState();
     if (saved && saved.nodes.length > 0) {
@@ -177,14 +202,50 @@ export default function Canvas() {
     }
   }, [showSkeleton, setNodes]);
 
-  const handleNodesReceived = useCallback((newNodes: any[]) => {
-    setNodes((prev) => {
-      const cleanedPrev = prev.filter((n) => n.type !== "skeletonNode");
+  // Re-link the WHOLE board: send every current task node to the relationship
+  // engine and merge in any new edges (deduping by source→target).
+  const refreshRelationships = useCallback(async () => {
+    const real = nodesRef.current.filter((n) => n.type !== "skeletonNode");
+    if (real.length < 2) return;
+
+    const payload = real.map((n) => ({
+      id: n.id,
+      label: n.data?.label,
+      note: n.data?.note ?? null,
+    }));
+
+    try {
+      const res = await fetch("/api/relationships", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes: payload }),
+      });
+      const data = await res.json();
+      if (!data.edges?.length) return;
+
+      setEdges((prev) => {
+        const seen = new Set(prev.map((e) => `${e.source}->${e.target}`));
+        const fresh = data.edges.filter(
+          (e: any) => !seen.has(`${e.source}->${e.target}`),
+        );
+        return [...prev, ...fresh];
+      });
+    } catch (err) {
+      console.error("[relationships] refresh failed:", err);
+    }
+  }, [setEdges]);
+
+  const handleNodesReceived = useCallback(
+    (newNodes: any[], options?: { linkAll?: boolean }) => {
+      const cleanedPrev = nodesRef.current.filter(
+        (n) => n.type !== "skeletonNode",
+      );
 
       const quadrantCount: Record<string, number> = {};
       cleanedPrev.forEach((n) => {
         if (n.data?.quadrant) {
-          quadrantCount[n.data.quadrant] = (quadrantCount[n.data.quadrant] || 0) + 1;
+          quadrantCount[n.data.quadrant] =
+            (quadrantCount[n.data.quadrant] || 0) + 1;
         }
       });
 
@@ -193,16 +254,45 @@ export default function Canvas() {
         quadrantCount[node.quadrant] = count + 1;
 
         return {
-          id: node.id || `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          id:
+            node.id ||
+            `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           type: "taskNode",
           position: getNodePosition(node.quadrant, count),
-          data: { label: node.label, note: node.note, quadrant: node.quadrant },
+          data: {
+            label: node.label,
+            note: node.note,
+            quadrant: node.quadrant,
+          },
         };
       });
 
-      return [...cleanedPrev, ...positioned];
-    });
-  }, [setNodes]);
+      const merged = [...cleanedPrev, ...positioned];
+      nodesRef.current = merged; // sync so refreshRelationships sees new nodes
+      setNodes(merged);
+
+      // After a brain dump, re-link across everything on the board.
+      if (options?.linkAll) refreshRelationships();
+    },
+    [setNodes, refreshRelationships],
+  );
+
+  // Manual linking: dragging between node handles creates an edge.
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            data: { relType: "manual" },
+            style: { stroke: "#9ca3af", strokeWidth: 2 },
+          },
+          eds,
+        ),
+      );
+    },
+    [setEdges],
+  );
 
   const handleEdgesReceived = useCallback((newEdges: any[]) => {
     setEdges((prev) => [...prev, ...newEdges]);
@@ -215,6 +305,7 @@ export default function Canvas() {
   }, [setNodes, setEdges]);
 
   return (
+    <ClusterContext.Provider value={cluster}>
     <div
       style={{
         width: "100vw",
@@ -342,6 +433,7 @@ export default function Canvas() {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
@@ -379,5 +471,6 @@ export default function Canvas() {
         </ReactFlow>
       </div>
     </div>
+    </ClusterContext.Provider>
   );
 }
