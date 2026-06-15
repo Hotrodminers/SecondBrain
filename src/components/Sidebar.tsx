@@ -1,12 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useSession, signOut } from "next-auth/react";
+import { createYouTubeEdges } from "@/lib/quadrants";
 
 interface SidebarProps {
-  onNodesReceived: (nodes: any[]) => void;
+  onNodesReceived: (nodes: any[], options?: { linkAll?: boolean }) => void;
   onEdgesReceived?: (edges: any[]) => void;
   onClear: () => void;
   onLoadingChange: (loading: boolean) => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export default function Sidebar({
@@ -14,7 +19,10 @@ export default function Sidebar({
   onEdgesReceived,
   onClear,
   onLoadingChange,
+  collapsed = false,
+  onToggleCollapse,
 }: SidebarProps) {
+  const { data: session } = useSession();
   const [activeTab, setActiveTab] = useState<"dump" | "youtube">("dump");
   const [text, setText] = useState("");
   const [ytUrl, setYtUrl] = useState("");
@@ -39,7 +47,9 @@ export default function Sidebar({
       const data = await response.json();
 
       if (data.nodes && data.nodes.length > 0) {
-        onNodesReceived(data.nodes);
+        // linkAll: re-run relationship extraction across the whole board so
+        // these new tasks connect to anything already on the canvas.
+        onNodesReceived(data.nodes, { linkAll: true });
         setText("");
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
@@ -70,29 +80,18 @@ export default function Sidebar({
 
       const data = await response.json();
 
-      // Check for 'steps' because of Dev B's backend format
       if (data.steps && data.steps.length > 0) {
-        // 1. Map Dev B's steps into React Flow nodes
+        const batchId = Date.now();
         const mappedNodes = data.steps.map((step: any, index: number) => ({
-          id: step.id || `yt_${Date.now()}_${index}`,
+          id: `yt_${batchId}_${index}`,
           label: step.label,
           note: data.title || "YouTube Roadmap",
           quadrant: "schedule",
+          order: step.order || index + 1,
         }));
 
-        // 2. Create connecting edges sequentially
-        const mappedEdges = [];
-        for (let i = 0; i < mappedNodes.length - 1; i++) {
-          mappedEdges.push({
-            id: `e_${mappedNodes[i].id}_${mappedNodes[i + 1].id}`,
-            source: mappedNodes[i].id,
-            target: mappedNodes[i + 1].id,
-            animated: true,
-            style: { stroke: "#14b8a6", strokeWidth: 2 },
-          });
-        }
+        const mappedEdges = createYouTubeEdges(mappedNodes);
 
-        // 3. Send to Canvas
         onNodesReceived(mappedNodes);
         if (onEdgesReceived) {
           onEdgesReceived(mappedEdges);
@@ -113,6 +112,36 @@ export default function Sidebar({
     }
   };
 
+  if (collapsed) {
+    return (
+      <button
+        onClick={onToggleCollapse}
+        title="Expand panel"
+        style={{
+          position: "fixed",
+          left: "16px",
+          top: "16px",
+          zIndex: 20,
+          width: "40px",
+          height: "40px",
+          borderRadius: "10px",
+          background: "#161616",
+          border: "1px solid #2a2a2a",
+          color: "#e5e5e5",
+          fontSize: "18px",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "Inter, sans-serif",
+          boxShadow: "0 4px 16px #00000080",
+        }}
+      >
+        ☰
+      </button>
+    );
+  }
+
   return (
     <div
       style={{
@@ -130,10 +159,53 @@ export default function Sidebar({
         top: 0,
         zIndex: 10,
         boxSizing: "border-box",
+        overflowY: "auto",
       }}
     >
       {/* Header */}
       <div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "10px",
+          }}
+        >
+          <Link
+            href="/"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              color: "#666",
+              fontSize: "12px",
+              textDecoration: "none",
+            }}
+          >
+            <span style={{ fontSize: "14px", lineHeight: 1 }}>←</span> Home
+          </Link>
+          <button
+            onClick={onToggleCollapse}
+            title="Collapse panel"
+            style={{
+              background: "transparent",
+              border: "1px solid #2a2a2a",
+              borderRadius: "8px",
+              color: "#888",
+              width: "28px",
+              height: "28px",
+              fontSize: "14px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: "Inter, sans-serif",
+            }}
+          >
+            «
+          </button>
+        </div>
         <div
           style={{
             display: "flex",
@@ -414,22 +486,40 @@ export default function Sidebar({
           Quadrants
         </p>
         {[
-          { color: "#ef4444", label: "Do Now", desc: "Urgent + Important" },
+          {
+            color: "#ef4444",
+            label: "Do Now",
+            desc: "Urgent + Important",
+            tip: "Important AND time-critical. There are consequences if it slips — do it today (e.g. exam tomorrow).",
+          },
           {
             color: "#14b8a6",
             label: "Schedule",
             desc: "Important, not urgent",
+            tip: "Matters for your goals but has no deadline pressure yet. Plan a time so it doesn't get ignored (e.g. build your portfolio).",
           },
           {
             color: "#f59e0b",
             label: "Delegate",
             desc: "Urgent, not important",
+            tip: "Time-sensitive but low-value to you. Hand it off or knock it out fast — don't let it eat your important work (e.g. routine email).",
           },
-          { color: "#6b7280", label: "Drop", desc: "Neither" },
+          {
+            color: "#6b7280",
+            label: "Drop",
+            desc: "Neither",
+            tip: "Neither urgent nor important. Distractions and time-wasters — let them go (e.g. doomscrolling).",
+          },
         ].map((q) => (
           <div
             key={q.label}
-            style={{ display: "flex", alignItems: "center", gap: "8px" }}
+            title={q.tip}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              cursor: "help",
+            }}
           >
             <div
               style={{
@@ -450,18 +540,96 @@ export default function Sidebar({
       <button
         onClick={onClear}
         style={{
-          background: "transparent",
-          color: "#444",
-          border: "1px solid #222",
+          background: "rgba(239, 68, 68, 0.08)",
+          color: "#f87171",
+          border: "1px solid #ef444455",
           borderRadius: "8px",
-          padding: "8px",
+          padding: "9px",
           fontSize: "12px",
+          fontWeight: 600,
           cursor: "pointer",
           fontFamily: "Inter, sans-serif",
         }}
       >
         Clear Canvas
       </button>
+
+      {/* Account */}
+      <div
+        style={{
+          borderTop: "1px solid #1f1f1f",
+          paddingTop: "12px",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+        }}
+      >
+        <Link
+          href="/account"
+          title="View account"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            flex: 1,
+            minWidth: 0,
+            textDecoration: "none",
+          }}
+        >
+          <div
+            style={{
+              width: "28px",
+              height: "28px",
+              borderRadius: "50%",
+              background: "#2d5a3f",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "12px",
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            {(session?.user?.name || session?.user?.email || "?")
+              .charAt(0)
+              .toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p
+              style={{
+                color: "#aaa",
+                fontSize: "12px",
+                margin: 0,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {session?.user?.name || session?.user?.email || "Guest"}
+            </p>
+            <p style={{ color: "#555", fontSize: "10px", margin: 0 }}>
+              View account →
+            </p>
+          </div>
+        </Link>
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          style={{
+            background: "transparent",
+            color: "#888",
+            border: "1px solid #2a2a2a",
+            borderRadius: "8px",
+            padding: "6px 10px",
+            fontSize: "11px",
+            cursor: "pointer",
+            fontFamily: "Inter, sans-serif",
+            flexShrink: 0,
+          }}
+        >
+          Sign out
+        </button>
+      </div>
     </div>
   );
 }

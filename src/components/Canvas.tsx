@@ -4,23 +4,21 @@ import ReactFlow, {
   Background,
   Controls,
   MiniMap,
+  addEdge,
   useNodesState,
   useEdgesState,
+  type Connection,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import TaskNode from "./TaskNode";
 import SkeletonNode from "./SkeletonNode";
 import Sidebar from "./Sidebar";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { getNodePosition, computeDisjointSets } from "@/lib/quadrants";
+import { saveCanvasState, loadCanvasState, clearCanvasState } from "@/lib/storage";
+import { ClusterContext } from "./ClusterContext";
 
 const nodeTypes = { taskNode: TaskNode, skeletonNode: SkeletonNode };
-
-const quadrantPositions: Record<string, { x: number; y: number }> = {
-  do_now: { x: 200, y: 150 },
-  schedule: { x: 900, y: 150 },
-  delegate: { x: 200, y: 600 },
-  drop: { x: 900, y: 600 },
-};
 
 const skeletonNodes = [
   {
@@ -49,7 +47,6 @@ const skeletonNodes = [
   },
 ];
 
-// Pre-seeded demo state for high-impact first load
 const initialDemoNodes = [
   {
     id: "demo-1",
@@ -101,8 +98,6 @@ const initialDemoNodes = [
       quadrant: "drop",
     },
   },
-
-  // YouTube Roadmap Chain (Schedule Quadrant)
   {
     id: "yt-1",
     type: "taskNode",
@@ -157,45 +152,48 @@ export default function Canvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [showSkeleton, setShowSkeleton] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
-  // Load from localStorage or inject demo data on mount
+  // Keep a live reference to the latest nodes for async relationship refreshes.
+  const nodesRef = useRef(nodes);
   useEffect(() => {
-    try {
-      const savedNodes = localStorage.getItem("second-brain-nodes");
-      const savedEdges = localStorage.getItem("second-brain-edges");
+    nodesRef.current = nodes;
+  }, [nodes]);
 
-      const parsedNodes = savedNodes ? JSON.parse(savedNodes) : [];
-      const parsedEdges = savedEdges ? JSON.parse(savedEdges) : [];
+  // Disjoint sets computed live over the whole board (all nodes + all edges,
+  // AI-made or hand-drawn). Shared via context so nodes recolor on any change.
+  const cluster = useMemo(() => {
+    const real = nodes.filter((n) => n.type !== "skeletonNode");
+    const rels = edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      type: (e.data as any)?.relType || "related_to",
+    }));
+    const { setColorOf, setIdOf } = computeDisjointSets(
+      real.map((n) => n.id),
+      rels,
+    );
+    return { setColorOf, setIdOf };
+  }, [nodes, edges]);
 
-      if (parsedNodes.length > 0) {
-        setNodes(parsedNodes);
-        setEdges(parsedEdges);
-      } else {
-        // Pre-seed demo state if empty
-        setNodes(initialDemoNodes);
-        setEdges(initialDemoEdges);
-      }
-    } catch (e) {
-      console.error("Failed to load saved data", e);
+  useEffect(() => {
+    const saved = loadCanvasState();
+    if (saved && saved.nodes.length > 0) {
+      setNodes(saved.nodes);
+      setEdges(saved.edges);
+    } else {
       setNodes(initialDemoNodes);
       setEdges(initialDemoEdges);
-    } finally {
-      setIsLoaded(true);
     }
+    setIsLoaded(true);
   }, [setNodes, setEdges]);
 
-  // Save to localStorage on changes
   useEffect(() => {
     if (!isLoaded) return;
-    try {
-      localStorage.setItem("second-brain-nodes", JSON.stringify(nodes));
-      localStorage.setItem("second-brain-edges", JSON.stringify(edges));
-    } catch (e) {
-      console.error("Failed to save data", e);
-    }
+    const realNodes = nodes.filter((n) => n.type !== "skeletonNode");
+    saveCanvasState(realNodes, edges);
   }, [nodes, edges, isLoaded]);
 
-  // Force React Flow state to accept or remove skeletons dynamically
   useEffect(() => {
     if (showSkeleton) {
       setNodes((prev) => [...prev, ...skeletonNodes]);
@@ -204,25 +202,54 @@ export default function Canvas() {
     }
   }, [showSkeleton, setNodes]);
 
-  const handleNodesReceived = (newNodes: any[]) => {
-    setNodes((prev) => {
-      // Clean out skeletons immediately if they somehow lingered
-      const cleanedPrev = prev.filter((n) => n.type !== "skeletonNode");
+  // Re-link the WHOLE board: send every current task node to the relationship
+  // engine and merge in any new edges (deduping by source→target).
+  const refreshRelationships = useCallback(async () => {
+    const real = nodesRef.current.filter((n) => n.type !== "skeletonNode");
+    if (real.length < 2) return;
 
-      const quadrantCount: Record<string, number> = {
-        do_now: 0,
-        schedule: 0,
-        delegate: 0,
-        drop: 0,
-      };
+    const payload = real.map((n) => ({
+      id: n.id,
+      label: n.data?.label,
+      note: n.data?.note ?? null,
+    }));
+
+    try {
+      const res = await fetch("/api/relationships", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes: payload }),
+      });
+      const data = await res.json();
+      if (!data.edges?.length) return;
+
+      setEdges((prev) => {
+        const seen = new Set(prev.map((e) => `${e.source}->${e.target}`));
+        const fresh = data.edges.filter(
+          (e: any) => !seen.has(`${e.source}->${e.target}`),
+        );
+        return [...prev, ...fresh];
+      });
+    } catch (err) {
+      console.error("[relationships] refresh failed:", err);
+    }
+  }, [setEdges]);
+
+  const handleNodesReceived = useCallback(
+    (newNodes: any[], options?: { linkAll?: boolean }) => {
+      const cleanedPrev = nodesRef.current.filter(
+        (n) => n.type !== "skeletonNode",
+      );
+
+      const quadrantCount: Record<string, number> = {};
       cleanedPrev.forEach((n) => {
-        if (n.data?.quadrant)
+        if (n.data?.quadrant) {
           quadrantCount[n.data.quadrant] =
             (quadrantCount[n.data.quadrant] || 0) + 1;
+        }
       });
 
       const positioned = newNodes.map((node) => {
-        const base = quadrantPositions[node.quadrant] || { x: 400, y: 300 };
         const count = quadrantCount[node.quadrant] || 0;
         quadrantCount[node.quadrant] = count + 1;
 
@@ -231,30 +258,54 @@ export default function Canvas() {
             node.id ||
             `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           type: "taskNode",
-          position: {
-            x: base.x + (count % 2) * 280,
-            y: base.y + Math.floor(count / 2) * 160,
+          position: getNodePosition(node.quadrant, count),
+          data: {
+            label: node.label,
+            note: node.note,
+            quadrant: node.quadrant,
           },
-          data: { label: node.label, note: node.note, quadrant: node.quadrant },
         };
       });
 
-      return [...cleanedPrev, ...positioned];
-    });
-  };
+      const merged = [...cleanedPrev, ...positioned];
+      nodesRef.current = merged; // sync so refreshRelationships sees new nodes
+      setNodes(merged);
 
-  const handleEdgesReceived = (newEdges: any[]) => {
+      // After a brain dump, re-link across everything on the board.
+      if (options?.linkAll) refreshRelationships();
+    },
+    [setNodes, refreshRelationships],
+  );
+
+  // Manual linking: dragging between node handles creates an edge.
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            data: { relType: "manual" },
+            style: { stroke: "#9ca3af", strokeWidth: 2 },
+          },
+          eds,
+        ),
+      );
+    },
+    [setEdges],
+  );
+
+  const handleEdgesReceived = useCallback((newEdges: any[]) => {
     setEdges((prev) => [...prev, ...newEdges]);
-  };
+  }, [setEdges]);
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     setNodes([]);
     setEdges([]);
-    localStorage.removeItem("second-brain-nodes");
-    localStorage.removeItem("second-brain-edges");
-  };
+    clearCanvasState();
+  }, [setNodes, setEdges]);
 
   return (
+    <ClusterContext.Provider value={cluster}>
     <div
       style={{
         width: "100vw",
@@ -263,23 +314,24 @@ export default function Canvas() {
         background: "#0a0a0a",
       }}
     >
-      {/* SIDEBAR UPDATED WITH onEdgesReceived PROP */}
       <Sidebar
         onNodesReceived={handleNodesReceived}
         onEdgesReceived={handleEdgesReceived}
         onClear={handleClear}
         onLoadingChange={setShowSkeleton}
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((c) => !c)}
       />
 
       <div
         style={{
-          marginLeft: "320px",
+          marginLeft: collapsed ? "0px" : "320px",
+          transition: "margin-left 0.25s ease",
           flex: 1,
           height: "100vh",
           position: "relative",
         }}
       >
-        {/* Top bar */}
         <div
           style={{
             position: "absolute",
@@ -381,6 +433,7 @@ export default function Canvas() {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
@@ -396,9 +449,9 @@ export default function Canvas() {
             }}
           />
           <MiniMap
-            width={160}
-            height={100}
             style={{
+              width: 160,
+              height: 100,
               background: "#0f0f0f",
               border: "1px solid #2a2a2a",
               borderRadius: "12px",
@@ -418,5 +471,6 @@ export default function Canvas() {
         </ReactFlow>
       </div>
     </div>
+    </ClusterContext.Provider>
   );
 }

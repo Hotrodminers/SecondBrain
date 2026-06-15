@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { YoutubeTranscript } from "youtube-transcript";
+<<<<<<< HEAD
 import Groq from "groq-sdk";
 
 const YOUTUBE_PROMPT = `You are a productivity assistant that extracts actionable steps from video transcripts.
@@ -32,6 +33,9 @@ RULES:
 - Labels must be verb phrases: "Install Node.js", not "Node.js installation"
 - IDs must be "yt_1", "yt_2" etc.
 - If transcript is empty or not useful, return {"title": "Unknown", "source_url": "", "steps": []}`;
+=======
+import { extractYouTubeSteps } from "@/lib/ai";
+>>>>>>> 714ae523f01c47c97e61619aaa10d9732727618d
 
 function extractVideoId(url: string): string | null {
   const match = url.match(
@@ -40,6 +44,7 @@ function extractVideoId(url: string): string | null {
   return match ? match[1] : null;
 }
 
+<<<<<<< HEAD
 function cleanAIResponse(raw: string): string {
   let cleaned = raw.trim();
   cleaned = cleaned.replace(/^```json\s*/i, "");
@@ -80,6 +85,8 @@ function validateYouTubeResponse(data: any, originalUrl: string) {
   };
 }
 
+=======
+>>>>>>> 714ae523f01c47c97e61619aaa10d9732727618d
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -89,7 +96,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
-    // 1. Extract video ID
     const videoId = extractVideoId(url.trim());
     if (!videoId) {
       return NextResponse.json(
@@ -98,15 +104,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Fetch transcript
     console.log(`[YouTube] Fetching transcript for ${videoId}...`);
     let transcript: string;
     try {
       const segments = await YoutubeTranscript.fetchTranscript(videoId);
       transcript = segments.map((s: any) => s.text).join(" ");
-    } catch {
+    } catch (txErr: any) {
+      console.log("[YouTube] Transcript FAILED:", txErr?.message);
       return NextResponse.json(
-        { error: "Could not fetch transcript. Video may not have captions." },
+        {
+          error:
+            txErr?.message?.replace("[YoutubeTranscript] 🚨 ", "") ||
+            "Could not fetch transcript. Video may not have captions.",
+        },
         { status: 400 },
       );
     }
@@ -118,6 +128,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+<<<<<<< HEAD
     // 3. Truncate to ~1500 words
     const truncated = transcript.split(" ").slice(0, 1500).join(" ");
     const combinedPrompt = `${YOUTUBE_PROMPT}\n\n---\n\nSource URL: ${url}\n\nTranscript:\n${truncated}`;
@@ -163,13 +174,19 @@ export async function POST(req: NextRequest) {
     }
 
     const result = validateYouTubeResponse(parsed, url);
+=======
+    const truncated = transcript.split(" ").slice(0, 800).join(" ");
+
+    console.log(`[YouTube] Sending ${truncated.length} chars to AI...`);
+    const result = await extractYouTubeSteps(truncated, url);
+>>>>>>> 714ae523f01c47c97e61619aaa10d9732727618d
     console.log(`[YouTube] Returned ${result.steps.length} steps`);
 
     return NextResponse.json(result);
-  } catch (error) {
-    console.error("[YouTube] Error:", error);
+  } catch (error: any) {
+    console.log("[YouTube] Error:", error?.message);
     return NextResponse.json(
-      { error: "Failed to process video" },
+      { error: `Failed to process video: ${error?.message || "unknown"}` },
       { status: 500 },
     );
   }
