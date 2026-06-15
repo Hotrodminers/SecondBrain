@@ -185,6 +185,7 @@ export default function Canvas() {
       setNodes(initialDemoNodes);
       setEdges(initialDemoEdges);
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoaded(true);
   }, [setNodes, setEdges]);
 
