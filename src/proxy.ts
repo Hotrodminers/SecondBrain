@@ -10,10 +10,11 @@ export default auth((req) => {
 
   const isOnCanvas = pathname.startsWith("/canvas");
   const isOnAccount = pathname.startsWith("/account");
+  const isOnAdmin = pathname.startsWith("/admin");
   const isOnVerify = pathname.startsWith("/verify-email");
 
   // 1. If trying to access protected pages and not logged in, redirect to login
-  if ((isOnCanvas || isOnAccount) && !isLoggedIn) {
+  if ((isOnCanvas || isOnAccount || isOnAdmin) && !isLoggedIn) {
     const loginUrl = new URL("/login", req.nextUrl.origin);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
@@ -28,5 +29,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/canvas/:path*", "/account/:path*", "/verify-email"],
+  matcher: ["/canvas/:path*", "/account/:path*", "/admin/:path*", "/verify-email"],
 };
