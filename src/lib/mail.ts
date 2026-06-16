@@ -1,16 +1,36 @@
 import nodemailer from "nodemailer";
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.SMTP_USER || "second2brains@gmail.com",
-    pass: process.env.SMTP_PASS || "wkel bxdd kvyl skcv",
-  },
-});
+// Provider-agnostic SMTP. Set these env vars to use a transactional email
+// service (recommended for production — personal Gmail gets rate-limited and
+// banned for sending OTPs):
+//   SMTP_HOST  e.g. smtp-relay.brevo.com  |  smtp.sendgrid.net
+//   SMTP_PORT  587 (TLS) or 465 (SSL)
+//   SMTP_USER  provider username (SendGrid: literally "apikey")
+//   SMTP_PASS  provider SMTP key / API key
+//   MAIL_FROM  verified sender, e.g. "Second Brain <no-reply@yourdomain.com>"
+// If SMTP_HOST is not set, it falls back to Gmail (dev/testing only).
+const host = process.env.SMTP_HOST;
+const port = Number(process.env.SMTP_PORT || 587);
+
+const transporter = host
+  ? nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465, // true for 465, false for 587 (STARTTLS)
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    })
+  : nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+
+const FROM =
+  process.env.MAIL_FROM ||
+  `"Second Brain" <${process.env.SMTP_USER || "no-reply@secondbrain.app"}>`;
 
 export async function sendOtpEmail(to: string, otp: string) {
   const mailOptions = {
-    from: `"Second Brain" <${process.env.SMTP_USER || "second2brains@gmail.com"}>`,
+    from: FROM,
     to,
     subject: "Verify your Email - Second Brain",
     // A plain-text part alongside the HTML improves deliverability (HTML-only
