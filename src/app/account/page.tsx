@@ -16,10 +16,6 @@ export default async function AccountPage() {
 
   if (!user) redirect("/login");
 
-  if (!user.emailVerified) {
-    redirect("/verify-email");
-  }
-
   const signInMethod =
     user.accounts.length > 0
       ? user.accounts.map((a) => a.provider).join(", ")
