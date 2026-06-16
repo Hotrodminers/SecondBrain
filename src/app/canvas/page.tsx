@@ -17,9 +17,5 @@ export default async function CanvasPage() {
     redirect("/login");
   }
 
-  if (!user.emailVerified) {
-    redirect("/verify-email");
-  }
-
   return <Canvas />;
 }
